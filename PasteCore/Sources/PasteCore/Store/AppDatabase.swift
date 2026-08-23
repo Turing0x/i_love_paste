@@ -142,6 +142,147 @@ extension AppDatabase {
             }
         }
 
+        // `foreignKeyChecks: .deferred` porque esta migración reconstruye
+        // `clipboardItem`: durante el trasvase la tabla vieja y la nueva conviven
+        // y las referencias no cuadran hasta el final.
+        migrator.registerMigration("v2.sync", foreignKeyChecks: .deferred) { db in
+            // `clipboardItem` se rehace sin la clave ajena contra `pinboard`.
+            //
+            // Es el mismo motivo por el que `sourceDeviceID` nunca la tuvo: al
+            // sincronizar, un elemento puede llegar antes que el pinboard al que
+            // pertenece, porque el servidor entrega los cambios por lotes y no
+            // promete que vengan juntos. Con la clave ajena esa inserción falla.
+            //
+            // No se pierde comportamiento: `deletePinboard` ya pone los
+            // `pinboardID` a nulo a mano en vez de fiarse de `onDelete`.
+
+            // El índice FTS se tira antes y se rehace después: sus triggers
+            // cuelgan de `clipboardItem` y se irían con la tabla vieja.
+            try db.drop(table: "clipboardItem_fts")
+
+            try db.create(table: "clipboardItem_v2") { t in
+                t.primaryKey("id", .text)
+                t.column("contentHash", .text).notNull()
+                t.column("kind", .text).notNull()
+                t.column("plainText", .text)
+                t.column("richData", .blob)
+                t.column("blobPath", .text)
+                t.column("byteSize", .integer).notNull().defaults(to: 0)
+                t.column("title", .text)
+                t.column("sourceBundleID", .text)
+                t.column("sourceAppName", .text)
+                t.column("urlHost", .text)
+                t.column("sourceDeviceID", .text).notNull()
+                t.column("createdAt", .datetime).notNull()
+                t.column("updatedAt", .datetime).notNull()
+                t.column("deletedAt", .datetime)
+                t.column("pinboardID", .text)
+                t.column("sortOrder", .double).notNull().defaults(to: 0)
+            }
+            try db.execute(sql: """
+                INSERT INTO clipboardItem_v2
+                SELECT id, contentHash, kind, plainText, richData, blobPath,
+                       byteSize, title, sourceBundleID, sourceAppName, urlHost,
+                       sourceDeviceID, createdAt, updatedAt, deletedAt,
+                       pinboardID, sortOrder
+                FROM clipboardItem
+                """)
+            try db.drop(table: "clipboardItem")
+            try db.rename(table: "clipboardItem_v2", to: "clipboardItem")
+
+            // Los índices se van con la tabla vieja, así que se rehacen igual
+            // que en `v1.schema`.
+            try db.create(
+                index: "clipboardItem_hash_unique",
+                on: "clipboardItem",
+                columns: ["contentHash"],
+                unique: true,
+                condition: Column("deletedAt") == nil
+            )
+            try db.execute(
+                sql: """
+                    CREATE INDEX clipboardItem_history
+                    ON clipboardItem(createdAt DESC)
+                    WHERE deletedAt IS NULL AND pinboardID IS NULL
+                    """
+            )
+            try db.execute(
+                sql: """
+                    CREATE INDEX clipboardItem_board
+                    ON clipboardItem(pinboardID, sortOrder)
+                    WHERE deletedAt IS NULL
+                    """
+            )
+            try db.create(
+                index: "clipboardItem_bundle",
+                on: "clipboardItem",
+                columns: ["sourceBundleID"]
+            )
+            try db.create(
+                index: "clipboardItem_device",
+                on: "clipboardItem",
+                columns: ["sourceDeviceID"]
+            )
+
+            // `synchronize` repuebla el índice a partir de la tabla y vuelve a
+            // instalar sus triggers.
+            try db.create(virtualTable: "clipboardItem_fts", using: FTS5()) { t in
+                t.synchronize(withTable: "clipboardItem")
+                t.tokenizer = .unicode61(diacritics: .remove)
+                t.column("title")
+                t.column("plainText")
+                t.column("sourceAppName")
+                t.column("urlHost")
+            }
+
+            // Campos de sistema del `CKRecord` de cada fila. Sin ellos no hay
+            // etiqueta de cambio que enviar, y cada subida llegaría al servidor
+            // como un conflicto contra su propia versión anterior.
+            try db.create(table: "ckRecordMetadata") { t in
+                t.primaryKey("recordName", .text)
+                t.column("tableName", .text).notNull()
+                t.column("systemFields", .blob).notNull()
+            }
+
+            // Qué falta por subir. La clave primaria es el registro, así que
+            // tocar diez veces la misma fila deja una entrada, no diez.
+            try db.create(table: "pendingSyncChange") { t in
+                t.primaryKey("recordName", .text)
+                t.column("tableName", .text).notNull()
+                t.column("queuedAt", .datetime).notNull()
+            }
+
+            // Estado de `CKSyncEngine`. Una sola fila, y el `CHECK` lo garantiza
+            // en vez de confiar en que nadie inserte una segunda.
+            try db.create(table: "syncEngineState") { t in
+                t.column("id", .integer).primaryKey().check { $0 == 1 }
+                t.column("state", .blob)
+            }
+
+            // La cola se llena con triggers y no desde Swift por el mismo motivo
+            // que el índice FTS5 usa `synchronize(withTable:)`: así ningún
+            // camino de escritura puede olvidarse de encolar. `capture`,
+            // `move`, `reorder`, `applyRetention` y lo que venga después quedan
+            // cubiertos sin tocarlos.
+            //
+            // No hay trigger de DELETE: el único borrado físico es
+            // `purgeTombstones`, y para entonces la lápida ya viajó. Cada
+            // dispositivo purga la suya con la misma ventana.
+            for table in ["clipboardItem", "pinboard", "device"] {
+                for event in ["INSERT", "UPDATE"] {
+                    try db.execute(sql: """
+                        CREATE TRIGGER \(table)_sync_\(event.lowercased())
+                        AFTER \(event) ON \(table)
+                        BEGIN
+                            INSERT INTO pendingSyncChange (recordName, tableName, queuedAt)
+                            VALUES (NEW.id, '\(table)', strftime('%Y-%m-%d %H:%M:%f', 'now'))
+                            ON CONFLICT(recordName) DO UPDATE SET queuedAt = excluded.queuedAt;
+                        END
+                        """)
+                }
+            }
+        }
+
         return migrator
     }
 }

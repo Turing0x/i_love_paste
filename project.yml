@@ -18,7 +18,10 @@ settings:
     SWIFT_STRICT_CONCURRENCY: complete
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
-    DEVELOPMENT_TEAM: ""
+    # Firmar con equipo real y no ad-hoc: sin una identidad estable, macOS
+    # considera que cada recompilación es otra app y vuelve a pedir el permiso
+    # de Accesibilidad. Es además lo que exigen CloudKit y los App Groups.
+    DEVELOPMENT_TEAM: "M2J9PP4RR8"
     CODE_SIGN_STYLE: Automatic
 
 targets:

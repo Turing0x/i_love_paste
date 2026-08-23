@@ -4,5 +4,22 @@
 <dict>
 	<!-- Sin com.apple.security.app-sandbox: el sandbox impide el permiso de
 	     Accesibilidad, leer la app en primer plano y sintetizar Cmd+V. -->
+
+	<!-- Base privada del usuario. Nada va a la pública ni a la compartida. -->
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudKit</string>
+	</array>
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.dev.threedots.paste</string>
+	</array>
+
+	<!-- Push silencioso: es lo que despierta a la app cuando el otro
+	     dispositivo sube algo. Sin esto la sincronización solo ocurriría al
+	     arrancar. En macOS la clave lleva prefijo, a diferencia de iOS: con
+	     `aps-environment` a secas la firma la descarta en silencio. -->
+	<key>com.apple.developer.aps-environment</key>
+	<string>development</string>
 </dict>
 </plist>

@@ -346,6 +346,191 @@ public struct ClipboardStore: Sendable {
         }
     }
 
+    // MARK: - Sincronización
+
+    /// Filas pendientes de subir, las más antiguas primero.
+    public func pendingChanges(limit: Int = 200) throws -> [PendingSyncChange] {
+        try db.reader.read { db in
+            try PendingSyncChange
+                .order(PendingSyncChange.Columns.queuedAt)
+                .limit(limit)
+                .fetchAll(db)
+        }
+    }
+
+    /// Secuencia que emite la cola cada vez que cambia.
+    ///
+    /// Es lo que conecta los triggers con el motor: cualquier escritura local
+    /// encola, y esto despierta a quien tenga que subirla, sin que ningún camino
+    /// de escritura tenga que acordarse de avisar.
+    public func observePendingChanges(limit: Int = 200) -> AsyncValueObservation<[PendingSyncChange]> {
+        ValueObservation
+            .tracking { db in
+                try PendingSyncChange
+                    .order(PendingSyncChange.Columns.queuedAt)
+                    .limit(limit)
+                    .fetchAll(db)
+            }
+            .values(in: db.reader)
+    }
+
+    /// Desencola lo que ya subió.
+    public func clearPending(recordNames: [String]) throws {
+        guard !recordNames.isEmpty else { return }
+        try db.writer.write { db in
+            _ = try PendingSyncChange.filter(keys: recordNames).deleteAll(db)
+        }
+    }
+
+    /// Ejecuta una escritura procedente del servidor y desencola sus registros
+    /// **en la misma transacción**.
+    ///
+    /// Es lo que corta el bucle de eco: aplicar un cambio remoto dispara los
+    /// triggers, que lo encolarían para volver a subirlo, y de ahí a subir y
+    /// bajar lo mismo indefinidamente. Al ir todo en una única escritura no hay
+    /// ventana en la que la cola quede sucia.
+    @discardableResult
+    public func applyingRemote<T>(
+        recordNames: [String],
+        _ work: (Database) throws -> T
+    ) throws -> T {
+        try db.writer.write { db in
+            let result = try work(db)
+            if !recordNames.isEmpty {
+                _ = try PendingSyncChange.filter(keys: recordNames).deleteAll(db)
+            }
+            return result
+        }
+    }
+
+    /// Aplica un lote bajado del servidor en una única transacción.
+    ///
+    /// Los pinboards se aplican antes que los elementos porque un elemento puede
+    /// referenciar uno recién creado.
+    ///
+    /// - Returns: los `recordName` que hay que volver a subir, porque ganó la
+    ///   versión local o porque resolver un duplicado cambió ambas filas.
+    @discardableResult
+    public func applyRemote(_ batch: RemoteBatch, now: Date = Date()) throws -> [String] {
+        try db.writer.write { db in
+            var needsUpload: [String] = []
+            var applied: [String] = []
+
+            for remote in batch.pinboards {
+                let local = try Pinboard.fetchOne(db, key: remote.id.uuidString)
+                switch SyncReconciler.resolve(local: local, remote: remote) {
+                case .remote:
+                    try remote.save(db)
+                    applied.append(remote.id.uuidString)
+                case .local:
+                    needsUpload.append(remote.id.uuidString)
+                }
+            }
+
+            for remote in batch.devices {
+                let local = try Device.fetchOne(db, key: remote.id.uuidString)
+                switch SyncReconciler.resolve(local: local, remote: remote) {
+                case .remote:
+                    try remote.save(db)
+                    applied.append(remote.id.uuidString)
+                case .local:
+                    needsUpload.append(remote.id.uuidString)
+                }
+            }
+
+            for remote in batch.items {
+                let local = try ClipboardItem.fetchOne(db, key: remote.id.uuidString)
+                guard SyncReconciler.resolve(local: local, remote: remote) == .remote else {
+                    needsUpload.append(remote.id.uuidString)
+                    continue
+                }
+
+                if remote.deletedAt == nil, let duplicate = try Self.liveDuplicate(db, of: remote) {
+                    let (winner, loser) = SyncReconciler.resolveDuplicate(remote, duplicate, at: now)
+                    // La lápida primero: el índice único es parcial sobre los
+                    // vivos, así que guardar antes al ganador chocaría contra el
+                    // duplicado que todavía está vivo.
+                    try loser.save(db)
+                    try winner.save(db)
+                    // Los dos cambian y los dos suben. La lápida es justo lo que
+                    // hace que el dispositivo que creó el duplicado se entere.
+                    needsUpload.append(winner.id.uuidString)
+                    needsUpload.append(loser.id.uuidString)
+                    continue
+                }
+
+                try remote.save(db)
+                applied.append(remote.id.uuidString)
+            }
+
+            // Registros que el servidor ya no tiene: aquí el borrado sí es
+            // físico, porque la lápida ya cumplió su función.
+            for name in batch.deletedRecordNames {
+                _ = try ClipboardItem.filter(key: name).deleteAll(db)
+                _ = try Pinboard.filter(key: name).deleteAll(db)
+                _ = try Device.filter(key: name).deleteAll(db)
+                _ = try CKRecordMetadata.filter(key: name).deleteAll(db)
+                applied.append(name)
+            }
+
+            // Desencolar lo aplicado —los triggers acaban de encolarlo— salvo lo
+            // que precisamente hay que subir.
+            let dequeue = Set(applied).subtracting(needsUpload)
+            if !dequeue.isEmpty {
+                _ = try PendingSyncChange.filter(keys: Array(dequeue)).deleteAll(db)
+            }
+
+            return needsUpload
+        }
+    }
+
+    /// Otro elemento vivo con el mismo contenido. Es lo que choca contra
+    /// `clipboardItem_hash_unique` al sincronizar.
+    private static func liveDuplicate(
+        _ db: Database,
+        of item: ClipboardItem
+    ) throws -> ClipboardItem? {
+        try ClipboardItem
+            .filter(ClipboardItem.Columns.contentHash == item.contentHash)
+            .filter(ClipboardItem.Columns.deletedAt == nil)
+            .filter(ClipboardItem.Columns.id != item.id.uuidString)
+            .fetchOne(db)
+    }
+
+    /// Estado serializado de `CKSyncEngine`. `nil` la primera vez.
+    public func syncEngineState() throws -> Data? {
+        try db.reader.read { db in
+            try SyncEngineState.fetchOne(db, key: 1)?.state
+        }
+    }
+
+    public func setSyncEngineState(_ state: Data?) throws {
+        try db.writer.write { db in
+            try SyncEngineState(state: state).save(db)
+        }
+    }
+
+    /// Campos de sistema del `CKRecord` de una fila, si ya se sincronizó alguna vez.
+    public func recordSystemFields(for recordName: String) throws -> Data? {
+        try db.reader.read { db in
+            try CKRecordMetadata.fetchOne(db, key: recordName)?.systemFields
+        }
+    }
+
+    public func setRecordSystemFields(
+        _ systemFields: Data,
+        for recordName: String,
+        in table: SyncTable
+    ) throws {
+        try db.writer.write { db in
+            try CKRecordMetadata(
+                recordName: recordName,
+                tableName: table,
+                systemFields: systemFields
+            ).save(db)
+        }
+    }
+
     // MARK: - Retención
 
     /// Marca como borrados los elementos de historial más viejos que `maxAge` o

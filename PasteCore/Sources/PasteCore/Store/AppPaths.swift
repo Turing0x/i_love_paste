@@ -12,6 +12,13 @@ public enum AppPaths {
     /// forma de que una extensión de iOS (teclado, share) vea los mismos datos
     /// que la app anfitriona.
     public static func container(appGroup: String? = nil) throws -> URL {
+        #if DEBUG
+        // Segunda instancia para probar la sincronización. Sin esto no hay forma
+        // de ver la ida y vuelta hasta que exista el iPhone: dos copias de la
+        // app en el mismo Mac compartirían base y no se sincronizarían con nada.
+        if let override = debugContainerOverride { return override }
+        #endif
+
         if let appGroup,
            let shared = FileManager.default
             .containerURL(forSecurityApplicationGroupIdentifier: appGroup) {
@@ -24,6 +31,18 @@ public enum AppPaths {
             create: true
         ).appendingPathComponent("Paste", isDirectory: true)
     }
+
+    #if DEBUG
+    /// Contenedor alternativo indicado por `PASTE_DB_PATH`.
+    ///
+    /// Solo en compilaciones de depuración: en una app instalada, una variable
+    /// de entorno no debería poder mover el historial del usuario.
+    public static var debugContainerOverride: URL? {
+        ProcessInfo.processInfo.environment["PASTE_DB_PATH"].map {
+            URL(fileURLWithPath: $0, isDirectory: true)
+        }
+    }
+    #endif
 
     public static func databaseURL(appGroup: String? = nil) throws -> URL {
         try container(appGroup: appGroup).appendingPathComponent("paste.sqlite")

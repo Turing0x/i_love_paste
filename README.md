@@ -44,15 +44,41 @@ cd PasteCore && swift test
 - **La app no tiene ventanas** (`LSUIElement`): vive en la barra de menús. Es lo
   que permite que el panel flotante reciba teclado sin robarle el foco a la app
   que tengas delante, requisito del Direct Paste.
+- **La sincronización sube desde una cola que llenan triggers SQL**, no desde el
+  código Swift: es el mismo argumento que el índice FTS5: así ningún camino de
+  escritura puede olvidarse de encolar.
+- **`clipboardItem` no tiene clave ajena contra `pinboard`** desde la migración
+  `v2.sync`. Al sincronizar, un elemento puede llegar antes que el pinboard al
+  que pertenece, porque el servidor entrega los cambios por lotes.
+- **Para probar la sincronización con un solo Mac**, `PASTE_DB_PATH` mueve la
+  base y las preferencias de una instancia, de modo que dos copias de la app se
+  comportan como dos dispositivos distintos. Solo en compilaciones de depuración.
+
 - **El atajo es ⌥⌘V, no ⇧⌘V**: registrar un atajo global se lo quita a todas las
   apps, y ⇧⌘V es "Pegar y adaptar estilo" en macOS.
 
 ## Estado
 
+La app de macOS está cerrada como producto: captura, panel, búsqueda, pegado y
+organización. Lo que falta ya no es funcionalidad de escritorio, es el segundo
+dispositivo.
+
 - [x] **M0** — Estructura, esquema GRDB + FTS5, tests
 - [x] **M1** — Capturador de `NSPasteboard`, dedup, exclusiones, pausa, copiar al pulsar
 - [x] **M2** — Panel flotante ⌥⌘V, búsqueda en vivo, filtros, Quick Paste ⌘1–9
-- [ ] **M2b** — Imágenes y ficheros (aplazado)
 - [x] **M3** — Direct Paste (Accesibilidad), pegar como texto plano
 - [x] **M4** — Pinboards: barra lateral, colores, drag & drop
-- [ ] **M5** — Ajustes, retención, edición
+- [x] **M6** — Sincronización por CloudKit (`CKSyncEngine`, base privada, campos cifrados)
+- [ ] **M7** — App de iPhone: extensiones de compartir y de acción, teclado, widget
+
+### Aplazado
+
+- **M2b — Imágenes y ficheros.** El modelo (`ContentKind.image`, `.file`) y
+  `BlobStore` están listos; falta leer los tipos del pasteboard y enseñarlos.
+- **M5 — Ajustes, retención y edición.** La retención ya se aplica sola con
+  valores por defecto (30 días, 10 000 elementos) y respeta los pinboards, y el
+  store ya sabe editar y renombrar: lo que falta es solo interfaz. Se aplaza a
+  después de la sincronización a propósito, para diseñar la ventana de ajustes
+  una sola vez, cuando existan también los ajustes de iCloud y de dispositivos.
+  Es además la primera ventana de verdad de una app `LSUIElement`, y conviene
+  resolver ese conflicto con el panel flotante una vez y no dos.

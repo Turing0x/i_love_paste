@@ -15,7 +15,7 @@ struct CaptureSettingsStore {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .pasteInstance) {
         self.defaults = defaults
     }
 

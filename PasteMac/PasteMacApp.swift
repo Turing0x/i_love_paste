@@ -4,6 +4,7 @@ import SwiftUI
 
 @main
 struct PasteMacApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var environment = AppEnvironment()
 
     var body: some Scene {
@@ -25,6 +26,16 @@ struct PasteMacApp: App {
                 get: { environment.alwaysPlainText },
                 set: { environment.alwaysPlainText = $0 }
             ))
+
+            Divider()
+
+            Toggle("Sincronizar con iCloud", isOn: Binding(
+                get: { environment.syncEnabled },
+                set: { environment.syncEnabled = $0 }
+            ))
+            // Sin estado visible, una sincronización rota es indistinguible de
+            // una ociosa.
+            Text(environment.syncStatusText).font(.caption)
 
             // El menú se reconstruye cada vez que se abre, así que basta con
             // leer el permiso aquí para que la opción desaparezca sola en
@@ -64,6 +75,7 @@ final class AppEnvironment {
 
     private let settingsStore = CaptureSettingsStore()
     private let pasteSettings = PasteSettingsStore()
+    private var sync: CloudSyncEngine?
     private let paster = DirectPaster()
     private let hotKeys = HotKeyCenter()
     private var retentionTimer: Timer?
@@ -84,6 +96,16 @@ final class AppEnvironment {
     var alwaysPlainText: Bool {
         get { pasteSettings.alwaysPlainText }
         set { pasteSettings.alwaysPlainText = newValue }
+    }
+
+    private(set) var syncStatusText = "Sincronización detenida"
+
+    var syncEnabled: Bool {
+        get { pasteSettings.syncEnabled }
+        set {
+            pasteSettings.syncEnabled = newValue
+            if newValue { startSync() } else { stopSync() }
+        }
     }
 
     /// No se guarda en una propiedad: el permiso se concede y se retira desde
@@ -138,6 +160,9 @@ final class AppEnvironment {
 
             configurePanel(store: store)
             startRetention(store: store)
+
+            sync = CloudSyncEngine(store: store)
+            if pasteSettings.syncEnabled { startSync() }
         } catch {
             openError = String(describing: error)
         }
@@ -154,6 +179,40 @@ final class AppEnvironment {
         }
         hotKeys.register(.optionCommandV) { [weak self] in
             self?.panel.toggle()
+        }
+    }
+
+    /// Arranca la sincronización.
+    ///
+    /// Un fallo aquí no puede tumbar la app: una app de portapapeles que no
+    /// arranca por no tener iCloud sería absurda. Se queda en local y lo dice.
+    private func startSync() {
+        guard let sync else { return }
+        Task {
+            await sync.setStatusHandler { [weak self] status in
+                Task { @MainActor in self?.syncStatusText = Self.describe(status) }
+            }
+            do {
+                try await sync.start()
+            } catch {
+                syncStatusText = "iCloud no disponible"
+                NSLog("Paste: no se pudo arrancar la sincronización: \(error)")
+            }
+        }
+    }
+
+    private func stopSync() {
+        guard let sync else { return }
+        Task { await sync.stop() }
+    }
+
+    private static func describe(_ status: CloudSyncEngine.Status) -> String {
+        switch status {
+        case .detenida: "Sincronización detenida"
+        case .sincronizando: "Sincronizando…"
+        case .alDia(let date):
+            "Al día · \(date.formatted(date: .omitted, time: .shortened))"
+        case .fallo: "Error de sincronización"
         }
     }
 
@@ -183,5 +242,21 @@ final class AppEnvironment {
         } catch {
             NSLog("Paste: falló la retención: \(error)")
         }
+    }
+}
+
+/// Registra la app para el push silencioso.
+///
+/// `CKSyncEngine` gestiona su propia suscripción, pero el sistema no le entrega
+/// nada si la app no se ha registrado. Sin esto la sincronización solo ocurriría
+/// al arrancar y al escribir, nunca al recibir.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApplication.shared.registerForRemoteNotifications()
+    }
+
+    func application(_ application: NSApplication, didFailToRegisterForRemoteNotificationsWithError error: any Error) {
+        // Sin push la app sigue sincronizando al arrancar y al escribir.
+        NSLog("Paste: sin push silencioso: \(error)")
     }
 }
