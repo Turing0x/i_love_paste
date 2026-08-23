@@ -86,34 +86,6 @@ struct RenameSheet: View {
     }
 }
 
-// MARK: - Presentación
-
-extension ContentKind {
-    var symbolName: String {
-        switch self {
-        case .text: "text.alignleft"
-        case .richText: "textformat"
-        case .url: "link"
-        case .image: "photo"
-        case .file: "doc"
-        }
-    }
-
-    var label: String {
-        switch self {
-        case .text: "Texto"
-        case .richText: "Formato"
-        case .url: "Enlace"
-        case .image: "Imagen"
-        case .file: "Fichero"
-        }
-    }
-
-    /// Tipos que el capturador produce hoy. Imágenes y ficheros llegan más
-    /// adelante, y ofrecerlos como filtro solo daría listas siempre vacías.
-    static let filterable: [ContentKind] = [.text, .richText, .url]
-}
-
 extension SkipReason {
     var explanation: String {
         switch self {

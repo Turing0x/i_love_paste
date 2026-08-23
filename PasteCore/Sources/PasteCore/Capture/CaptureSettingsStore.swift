@@ -1,11 +1,10 @@
 import Foundation
-import PasteCore
 
 /// Persiste las preferencias de captura y la identidad de este Mac.
 ///
 /// Va en `UserDefaults` y no en la base de datos porque no son datos del
 /// usuario: no se buscan, no se sincronizan y no forman parte del historial.
-struct CaptureSettingsStore {
+public struct CaptureSettingsStore {
     private enum Key {
         static let isPaused = "capture.isPaused"
         static let excludedBundleIDs = "capture.excludedBundleIDs"
@@ -15,11 +14,11 @@ struct CaptureSettingsStore {
 
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = .pasteInstance) {
+    public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
     }
 
-    func load() -> CaptureSettings {
+    public func load() -> CaptureSettings {
         var settings = CaptureSettings()
         settings.isPaused = defaults.bool(forKey: Key.isPaused)
         // Sin valor guardado se usan las exclusiones por defecto: la primera
@@ -35,7 +34,7 @@ struct CaptureSettingsStore {
         return settings
     }
 
-    func save(_ settings: CaptureSettings) {
+    public func save(_ settings: CaptureSettings) {
         defaults.set(settings.isPaused, forKey: Key.isPaused)
         defaults.set(Array(settings.excludedBundleIDs), forKey: Key.excludedBundleIDs)
         defaults.set(settings.maxTextBytes, forKey: Key.maxTextBytes)
@@ -45,7 +44,7 @@ struct CaptureSettingsStore {
     ///
     /// Se genera una vez y no cambia: cuando llegue la sincronización, es lo que
     /// distingue lo copiado aquí de lo que llegue del iPhone.
-    func deviceID() -> UUID {
+    public func deviceID() -> UUID {
         if let stored = defaults.string(forKey: Key.deviceID), let id = UUID(uuidString: stored) {
             return id
         }

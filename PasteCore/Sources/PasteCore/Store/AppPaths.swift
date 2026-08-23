@@ -6,6 +6,15 @@ import Foundation
 /// extensiones de iOS tienen que coincidir exactamente: si cada una calculase la
 /// suya, acabarían leyendo historiales distintos.
 public enum AppPaths {
+    /// Grupo que comparten la app de iPhone y sus extensiones.
+    ///
+    /// Vive aquí y no en cada target porque basta con que uno lo escriba
+    /// distinto para que la extensión guarde en un historial que la app no ve.
+    ///
+    /// El Mac no lo usa: no tiene extensiones, y moverle la base ahora dejaría
+    /// huérfano el historial que ya tiene.
+    public static let sharedGroupIdentifier = "group.dev.threedots.paste"
+
     /// Contenedor de la app.
     ///
     /// Con `appGroup` se devuelve el contenedor compartido, que es la única

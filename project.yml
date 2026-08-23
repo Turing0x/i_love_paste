@@ -54,4 +54,5 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.threedots.paste.ios
         INFOPLIST_FILE: PasteiOS/Info.plist
+        CODE_SIGN_ENTITLEMENTS: PasteiOS/PasteiOS.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"

@@ -1,60 +1,60 @@
 import Foundation
-import PasteCore
+import GRDB
 
 /// Estado de la lista del panel: consulta, filtros, resultados y selección.
 @MainActor
 @Observable
-final class HistoryListViewModel {
+public final class HistoryListViewModel {
     private let store: ClipboardStore
 
     /// Ámbito visible: el historial suelto, un pinboard, o todo junto.
-    var scope: HistoryFilter.Scope = .history { didSet { restartIfNeeded(oldValue) } }
-    var query: String = "" { didSet { restartIfNeeded(oldValue) } }
-    var kinds: Set<ContentKind> = [] { didSet { restartIfNeeded(oldValue) } }
-    var bundleID: String? { didSet { restartIfNeeded(oldValue) } }
-    var datePreset: DateRangePreset = .any { didSet { restartIfNeeded(oldValue) } }
+    public var scope: HistoryFilter.Scope = .history { didSet { restartIfNeeded(oldValue) } }
+    public var query: String = "" { didSet { restartIfNeeded(oldValue) } }
+    public var kinds: Set<ContentKind> = [] { didSet { restartIfNeeded(oldValue) } }
+    public var bundleID: String? { didSet { restartIfNeeded(oldValue) } }
+    public var datePreset: DateRangePreset = .any { didSet { restartIfNeeded(oldValue) } }
 
-    private(set) var items: [ClipboardItem] = []
-    private(set) var sourceApps: [(bundleID: String, name: String, count: Int)] = []
-    private(set) var error: String?
+    public private(set) var items: [ClipboardItem] = []
+    public private(set) var sourceApps: [(bundleID: String, name: String, count: Int)] = []
+    public private(set) var error: String?
 
-    var cursor = SelectionCursor()
+    public var cursor = SelectionCursor()
 
     private var observation: Task<Void, Never>?
 
     /// Los nueve primeros son alcanzables con ⌘1–9.
-    static let quickPasteCount = 9
+    public static let quickPasteCount = 9
 
-    init(store: ClipboardStore) {
+    public init(store: ClipboardStore) {
         self.store = store
     }
 
-    var selectedItem: ClipboardItem? { cursor.selected(in: items) }
+    public var selectedItem: ClipboardItem? { cursor.selected(in: items) }
 
-    func moveSelection(by delta: Int) {
+    public func moveSelection(by delta: Int) {
         cursor = cursor.moved(by: delta, count: items.count)
     }
 
     /// Elemento en la posición de un atajo ⌘N, contando desde 1.
-    func item(atQuickPasteNumber number: Int) -> ClipboardItem? {
+    public func item(atQuickPasteNumber number: Int) -> ClipboardItem? {
         let index = number - 1
         guard index >= 0, index < items.count else { return nil }
         return items[index]
     }
 
-    func start() {
+    public func start() {
         refreshSourceApps()
         restart()
     }
 
-    func stop() {
+    public func stop() {
         observation?.cancel()
         observation = nil
     }
 
     /// Deja la búsqueda como estaba al abrir: el panel se usa muchas veces al
     /// día y arrastrar el filtro de la vez anterior sorprende.
-    func reset() {
+    public func reset() {
         scope = .history
         query = ""
         kinds = []
@@ -103,13 +103,13 @@ final class HistoryListViewModel {
 
     /// Dentro de un pinboard el orden lo pone el usuario; en el historial lo
     /// pone la fecha y no es negociable.
-    var allowsManualOrder: Bool {
+    public var allowsManualOrder: Bool {
         if case .pinboard = scope { return true }
         return false
     }
 
     /// Recoloca un elemento delante del que ocupa `index`, o al final con `nil`.
-    func move(_ item: ClipboardItem, before index: Int?) {
+    public func move(_ item: ClipboardItem, before index: Int?) {
         guard allowsManualOrder else { return }
 
         // El propio arrastrado no cuenta como vecino: soltarlo sobre sí mismo

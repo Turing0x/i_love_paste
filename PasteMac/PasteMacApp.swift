@@ -73,7 +73,9 @@ final class AppEnvironment {
     let icons = AppIconCache()
     let panel = PanelController()
 
-    private let settingsStore = CaptureSettingsStore()
+    // El dominio de preferencias se pasa explícito: la instancia de depuración
+    // usa el suyo para no compartir `deviceID` con la principal.
+    private let settingsStore = CaptureSettingsStore(defaults: .pasteInstance)
     private let pasteSettings = PasteSettingsStore()
     private var sync: CloudSyncEngine?
     private let paster = DirectPaster()
