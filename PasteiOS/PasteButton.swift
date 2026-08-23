@@ -52,13 +52,11 @@ struct PasteButton: UIViewRepresentable {
         }
 
         override func paste(itemProviders: [NSItemProvider]) {
-            // El contenido se lee de los proveedores y no de `UIPasteboard`: es
-            // lo que el sistema acaba de entregar con permiso explícito del
-            // usuario. Del portapapeles solo se consultan metadatos, que no
-            // disparan el aviso.
-            let changeCount = UIPasteboard.general.changeCount
-            let declaresURL = UIPasteboard.general.hasURLs
-
+            // Aquí no se toca `UIPasteboard` ni para leer metadatos: cualquier
+            // acceso, por inocente que parezca, dispara el aviso "Paste ha
+            // pegado desde…", que es precisamente lo que `UIPasteControl` viene
+            // a evitar. Todo sale de los proveedores, que es lo que el sistema
+            // acaba de entregar con permiso explícito del usuario.
             Task { @MainActor in
                 var text: String?
                 var isURL = false
@@ -79,14 +77,18 @@ struct PasteButton: UIViewRepresentable {
                 }
 
                 var types: Set<String> = [PasteboardTypes.utf8PlainText]
-                // `UIPasteboard` no declara `public.url` aunque la haya: hay que
-                // añadirlo para que el motor clasifique el elemento como enlace
-                // y no como texto suelto.
-                if isURL || declaresURL { types.insert(PasteboardTypes.url) }
+                // Que sea un enlace lo decide haber podido cargar una `NSURL`
+                // del proveedor: es lo que hace que el motor lo clasifique como
+                // `url` y no como texto suelto.
+                if isURL { types.insert(PasteboardTypes.url) }
                 if rtf != nil { types.insert(PasteboardTypes.rtf) }
 
                 onCapture(PasteboardSnapshot(
-                    changeCount: changeCount,
+                    // El contador no se usa por esta vía: el motor recibe
+                    // `lastChangeCount: -1`, así que la comprobación de "no ha
+                    // cambiado" nunca se activa. Leerlo del portapapeles solo
+                    // serviría para provocar el aviso.
+                    changeCount: 0,
                     types: types,
                     string: text,
                     rtf: rtf

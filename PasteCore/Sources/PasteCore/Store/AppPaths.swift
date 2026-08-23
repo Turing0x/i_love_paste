@@ -5,6 +5,24 @@ import Foundation
 /// Están en `PasteCore` y no en cada app porque la del Mac, la del iPhone y las
 /// extensiones de iOS tienen que coincidir exactamente: si cada una calculase la
 /// suya, acabarían leyendo historiales distintos.
+/// Fallos al resolver dónde vive la base de datos.
+public enum AppPathsError: LocalizedError, Equatable {
+    /// Se pidió el contenedor compartido y el sistema no lo entregó.
+    case appGroupUnavailable(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .appGroupUnavailable(let group):
+            """
+            No hay acceso al grupo compartido «\(group)».
+            Suele significar que el entitlement de App Group no llegó al binario \
+            firmado. Sin él, la app y sus extensiones acabarían con historiales \
+            distintos.
+            """
+        }
+    }
+}
+
 public enum AppPaths {
     /// Grupo que comparten la app de iPhone y sus extensiones.
     ///
@@ -28,9 +46,20 @@ public enum AppPaths {
         if let override = debugContainerOverride { return override }
         #endif
 
-        if let appGroup,
-           let shared = FileManager.default
-            .containerURL(forSecurityApplicationGroupIdentifier: appGroup) {
+        if let appGroup {
+            // Si se pidió el grupo y el sistema no lo da, se falla en vez de
+            // caer al contenedor propio.
+            //
+            // El fallback silencioso es peor que el error: la app arrancaría
+            // aparentando normalidad mientras sus extensiones escriben en un
+            // historial que ella no lee, y eso se descubre tarde y con los datos
+            // ya partidos en dos. Que no haya grupo significa casi siempre un
+            // entitlement que no llegó al binario.
+            guard let shared = FileManager.default
+                .containerURL(forSecurityApplicationGroupIdentifier: appGroup)
+            else {
+                throw AppPathsError.appGroupUnavailable(appGroup)
+            }
             return shared
         }
         return try FileManager.default.url(

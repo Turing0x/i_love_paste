@@ -4,6 +4,7 @@ import UIKit
 
 @main
 struct PasteiOSApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var environment = AppEnvironment()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -112,5 +113,28 @@ struct RootView: View {
                 description: Text(environment.openError ?? "")
             )
         }
+    }
+}
+
+/// Registra la app para el push silencioso.
+///
+/// `CKSyncEngine` gestiona su propia suscripción, pero el sistema no le entrega
+/// nada si la app no se ha registrado. Gemelo del `AppDelegate` del Mac, y por
+/// el mismo motivo.
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        application.registerForRemoteNotifications()
+        return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: any Error
+    ) {
+        // Sin push la app sigue sincronizando al volver a primer plano.
+        NSLog("Paste: sin push silencioso: \(error)")
     }
 }

@@ -20,5 +20,12 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<!-- `CKSyncEngine` avisa por consola y deja de recibir push sin esto: es lo
+	     que permite que el iPhone se entere de lo que subió el Mac sin esperar a
+	     que el usuario abra la app. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 </dict>
 </plist>

@@ -121,7 +121,23 @@ public actor CloudSyncEngine {
     }
 
     private func report(_ error: any Error) {
+        // Un corte de red no es un fallo que enseñar: `CKSyncEngine` reintenta
+        // solo, y dejar el menú diciendo "Error de sincronización" hasta el
+        // siguiente ciclo miente sobre lo que está pasando.
+        guard !Self.isTransient(error) else { return }
         status = .fallo(String(describing: error))
+    }
+
+    /// Errores que se resuelven esperando.
+    private static func isTransient(_ error: any Error) -> Bool {
+        guard let error = error as? CKError else { return false }
+        return switch error.code {
+        case .networkFailure, .networkUnavailable, .serviceUnavailable,
+             .requestRateLimited, .zoneBusy:
+            true
+        default:
+            false
+        }
     }
 }
 
