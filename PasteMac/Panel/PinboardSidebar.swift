@@ -17,7 +17,17 @@ struct PinboardSidebar: View {
     /// llevaría por delante.
     @State private var renamingID: UUID?
     @State private var draftName = ""
-    @FocusState private var nameFocused: Bool
+
+    /// Foco por identidad y no por un booleano: la fila del pinboard recién
+    /// creado todavía no existe cuando se pide el foco —`model.pinboards` se
+    /// llena cuando emite la observación, que es asíncrona—, así que un `Bool`
+    /// puesto en ese momento no se lo lleva nadie.
+    @FocusState private var focusedBoard: UUID?
+
+    /// Fila resaltada por un arrastre encima. Sin realimentación, un arrastre
+    /// que no funciona es indistinguible de uno que sí.
+    @State private var dropTargetID: UUID?
+    @State private var historyIsTargeted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -44,66 +54,133 @@ struct PinboardSidebar: View {
 
     // MARK: - Filas
 
+    @ViewBuilder
     private func fixedScope(_ target: HistoryFilter.Scope, title: String, symbol: String) -> some View {
         let isSelected = scope == target
-        return Label(title, systemImage: symbol)
+        let row = Label(title, systemImage: symbol)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .rowStyle(isSelected: isSelected)
+            .rowStyle(
+                isSelected: isSelected,
+                isDropTarget: target == .history && historyIsTargeted
+            )
             .contentShape(.rect)
             .onTapGesture { scope = target }
-            // Soltar sobre "Historial" saca el elemento de su pinboard, que es
-            // el camino de vuelta natural del arrastre.
-            .dropDestination(for: ItemTransfer.self) { transfers, _ in
-                guard target == .history, let first = transfers.first else { return false }
-                moveItem(first.id, nil)
+
+        // Soltar sobre "Historial" saca el elemento de su pinboard, que es el
+        // camino de vuelta natural del arrastre. "Todo" no acepta nada: antes
+        // llevaba el mismo modificador y enseñaba un cursor que mentía.
+        if target == .history {
+            row.dropDestination(for: SidebarDrop.self) { drops, _ in
+                guard let first = drops.first, case .item(let id) = first else { return false }
+                moveItem(id, nil)
                 return true
-            }
+            } isTargeted: { historyIsTargeted = $0 }
+        } else {
+            row
+        }
     }
 
     @ViewBuilder
     private func pinboardRow(_ board: Pinboard, index: Int) -> some View {
+        if renamingID == board.id {
+            renameRow(board)
+        } else {
+            normalRow(board, index: index)
+        }
+    }
+
+    /// Fila en reposo: seleccionable, arrastrable y destino de soltado.
+    private func normalRow(_ board: Pinboard, index: Int) -> some View {
         let isSelected = scope == .pinboard(board.id)
 
+        return HStack(spacing: 8) {
+            Circle()
+                .fill(PinboardColor.color(hex: board.colorHex))
+                .frame(width: 9, height: 9)
+
+            Text(board.name).lineLimit(1)
+            Spacer(minLength: 4)
+            if model.count(for: board) > 0 {
+                Text("\(model.count(for: board))")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(isSelected ? .white.opacity(0.8) : .secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .rowStyle(isSelected: isSelected, isDropTarget: dropTargetID == board.id)
+        .contentShape(.rect)
+        .onTapGesture { scope = .pinboard(board.id) }
+        .contextMenu { menu(for: board) }
+        .draggable(PinboardTransfer(id: board.id))
+        // Un solo destino de soltado: una vista admite uno, y con dos apilados
+        // el segundo tapaba al primero sin decir nada.
+        .dropDestination(for: SidebarDrop.self) { drops, _ in
+            guard let first = drops.first else { return false }
+            switch first {
+            case .item(let id):
+                moveItem(id, board.id)
+                return true
+            case .pinboard(let id):
+                guard let dragged = model.pinboards.first(where: { $0.id == id }) else { return false }
+                model.move(dragged, before: index)
+                return true
+            }
+        } isTargeted: { targeted in
+            if targeted {
+                dropTargetID = board.id
+            } else if dropTargetID == board.id {
+                dropTargetID = nil
+            }
+        }
+    }
+
+    /// Fila en edición de nombre.
+    ///
+    /// Sin `onTapGesture` ni `draggable` encima a propósito: el campo necesita el
+    /// clic para colocar el cursor, y con la fila capturándolo no había forma de
+    /// escribir ni de salir del renombrado.
+    private func renameRow(_ board: Pinboard) -> some View {
         HStack(spacing: 8) {
             Circle()
                 .fill(PinboardColor.color(hex: board.colorHex))
                 .frame(width: 9, height: 9)
 
-            if renamingID == board.id {
-                TextField("Nombre", text: $draftName)
-                    .textFieldStyle(.plain)
-                    .focused($nameFocused)
-                    .onSubmit { commitRename(board) }
-                    // Esc cancela sin dejar que la tecla siga subiendo: arriba
-                    // hay un `onKeyPress` que escondería el panel entero.
-                    .onExitCommand { renamingID = nil }
-            } else {
-                Text(board.name).lineLimit(1)
-                Spacer(minLength: 4)
-                if model.count(for: board) > 0 {
-                    Text("\(model.count(for: board))")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(isSelected ? .white.opacity(0.8) : .secondary)
+            TextField("Nombre", text: $draftName)
+                .textFieldStyle(.plain)
+                .focused($focusedBoard, equals: board.id)
+                .onSubmit { commitRename(board) }
+                // Esc cancela sin dejar que la tecla siga subiendo: arriba
+                // hay un `onKeyPress` que escondería el panel entero.
+                .onExitCommand { cancelRename() }
+                // Lo mismo con las flechas: el panel las intercepta para mover
+                // la selección de la lista, y renombrando son del campo.
+                .onKeyPress(.upArrow) { .handled }
+                .onKeyPress(.downArrow) { .handled }
+                .onAppear {
+                    // El campo nace después de que `startRename` pidiera el
+                    // foco, así que hay que volver a pedirlo cuando ya existe
+                    // alguien a quien dárselo.
+                    focusedBoard = board.id
                 }
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .rowStyle(isSelected: isSelected)
-        .contentShape(.rect)
-        .onTapGesture { scope = .pinboard(board.id) }
-        .contextMenu { menu(for: board) }
-        .draggable(PinboardTransfer(id: board.id))
-        .dropDestination(for: ItemTransfer.self) { transfers, _ in
-            guard let first = transfers.first else { return false }
-            moveItem(first.id, board.id)
-            return true
+        .rowStyle(isSelected: scope == .pinboard(board.id))
+        // Perder el foco confirma, como en el Finder. Sin esto, hacer clic en
+        // otro sitio dejaba la fila convertida en un campo de texto para
+        // siempre y el pinboard recién creado se quedaba llamándose "Nuevo
+        // pinboard".
+        .onChange(of: focusedBoard) { previous, current in
+            guard previous == board.id, current != board.id, renamingID == board.id
+            else { return }
+            commitRename(board)
         }
-        .dropDestination(for: PinboardTransfer.self) { transfers, _ in
-            guard let first = transfers.first,
-                  let dragged = model.pinboards.first(where: { $0.id == first.id })
-            else { return false }
-            model.move(dragged, before: index)
-            return true
+        // Red de seguridad: pulsar fuera esconde el panel entero
+        // (`windowDidResignKey`) y ahí puede no quedar ciclo de foco que
+        // observar. Es idempotente: las otras salidas ya dejaron `renamingID`
+        // en `nil`.
+        .onDisappear {
+            guard renamingID == board.id else { return }
+            commitRename(board)
         }
     }
 
@@ -151,22 +228,41 @@ struct PinboardSidebar: View {
     private func startRename(_ board: Pinboard) {
         draftName = board.name
         renamingID = board.id
-        nameFocused = true
+        // El `onAppear` del campo lo vuelve a pedir: la fila puede no existir
+        // todavía, y entonces esto no llega a ninguna parte.
+        focusedBoard = board.id
     }
 
     private func commitRename(_ board: Pinboard) {
         model.rename(board, to: draftName)
+        endRename()
+    }
+
+    /// Esc deja el nombre anterior. Sale antes de soltar el foco para que el
+    /// `onChange` no lo confunda con un clic fuera y lo guarde igualmente.
+    private func cancelRename() {
+        endRename()
+    }
+
+    private func endRename() {
         renamingID = nil
+        focusedBoard = nil
     }
 }
 
 private extension View {
     /// Fondo y color de una fila de la barra lateral, iguales a los de la lista.
-    func rowStyle(isSelected: Bool) -> some View {
+    func rowStyle(isSelected: Bool, isDropTarget: Bool = false) -> some View {
         padding(.horizontal, 8)
             .padding(.vertical, 5)
             .background(isSelected ? Color.accentColor : .clear)
             .foregroundStyle(isSelected ? .white : .primary)
             .clipShape(RoundedRectangle(cornerRadius: 6))
+            .overlay {
+                if isDropTarget {
+                    RoundedRectangle(cornerRadius: 6)
+                        .strokeBorder(Color.accentColor, lineWidth: 2)
+                }
+            }
     }
 }

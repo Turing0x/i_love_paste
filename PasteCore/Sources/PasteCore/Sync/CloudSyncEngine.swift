@@ -31,6 +31,14 @@ public actor CloudSyncEngine {
     private var queueWatcher: Task<Void, Never>?
     private var onStatus: (@Sendable (Status) -> Void)?
 
+    private var isSyncing = false
+    private var lastSync: Date?
+
+    /// Abrir el panel dispara una sincronización, y el panel se abre decenas de
+    /// veces al día: sin freno, cada ⌥⌘V sería una ronda contra CloudKit y el
+    /// servidor acabaría limitando el ritmo.
+    private static let minimumInterval: TimeInterval = 15
+
     private(set) var status: Status = .detenida {
         didSet { onStatus?(status) }
     }
@@ -87,7 +95,51 @@ public actor CloudSyncEngine {
         queueWatcher?.cancel()
         queueWatcher = nil
         engine = nil
+        lastSync = nil
         status = .detenida
+    }
+
+    /// Fuerza un ciclo completo: baja lo que haya arriba y sube lo pendiente.
+    ///
+    /// `start()` no sirve para refrescar: es idempotente a propósito y, con el
+    /// motor ya montado, no hace nada. Sin este camino la bajada depende entera
+    /// del push silencioso y del ritmo de `automaticallySync`, que llegan cuando
+    /// el sistema quiere y no cuando el usuario mira la pantalla.
+    /// `force` distingue al usuario del ciclo de vida: el botón sincroniza
+    /// siempre, abrir el panel o volver a primer plano respeta el intervalo.
+    public func syncNow(force: Bool = false) async {
+        // El actor no basta para no solaparse: entre los `await` de dentro cabe
+        // otra llamada.
+        guard !isSyncing else { return }
+        if !force, let lastSync, Date().timeIntervalSince(lastSync) < Self.minimumInterval {
+            return
+        }
+
+        isSyncing = true
+        defer { isSyncing = false }
+
+        let previous = status
+        do {
+            if engine == nil { try start() }
+            guard let engine else { return }
+
+            status = .sincronizando
+            // Lo encolado con la sincronización parada no está en el motor.
+            enqueuePending()
+
+            try await engine.fetchChanges()
+            try await engine.sendChanges()
+
+            let now = Date()
+            lastSync = now
+            status = .alDia(now)
+        } catch {
+            report(error)
+            // `report` calla los fallos pasajeros a propósito, y callar aquí
+            // dejaría el estado clavado en "Sincronizando…" hasta la ronda
+            // siguiente.
+            if status == .sincronizando { status = previous }
+        }
     }
 
     /// Encola lo que los triggers dejaron pendiente y despierta al motor en

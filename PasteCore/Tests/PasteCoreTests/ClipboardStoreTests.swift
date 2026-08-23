@@ -402,6 +402,22 @@ private func textItem(
     #expect(try await iterator.next()?.map(\.name) == ["Trabajo", "Programación"])
 }
 
+/// El contador de la barra lateral cuelga de esta observación y no de la de
+/// pinboards: mover un elemento escribe en `clipboardItem`, así que la lista de
+/// pinboards no emite y el número se quedaba en el de antes del arrastre.
+@Test func laObservacionDeContadoresEmiteAlMoverUnElemento() async throws {
+    let store = try makeStore()
+    let board = Pinboard(name: "Trabajo")
+    try store.save(board)
+    let item = try store.capture(textItem("hola"))
+
+    var iterator = store.observePinboardCounts().makeAsyncIterator()
+    #expect(try await iterator.next() == [:])
+
+    try store.move(id: item.id, toPinboard: board.id)
+    #expect(try await iterator.next() == [board.id: 1])
+}
+
 // MARK: - Retención
 
 @Test func laRetencionPorAntiguedadNoTocaLosPinboards() throws {

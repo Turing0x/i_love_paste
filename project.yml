@@ -24,6 +24,30 @@ settings:
     DEVELOPMENT_TEAM: "M2J9PP4RR8"
     CODE_SIGN_STYLE: Automatic
 
+# Los schemes se declaran a mano y quedan compartidos en el proyecto. Sin esto
+# los autocrea Xcode en el perfil del usuario, y el listado va y viene entre
+# regeneraciones. Solo las dos apps: las extensiones se ejecutan a través de la
+# app que las embebe, no por su cuenta.
+schemes:
+  PasteMac:
+    build:
+      targets:
+        PasteMac: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
+  PasteiOS:
+    build:
+      targets:
+        PasteiOS: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+
+
 targets:
   PasteMac:
     type: application

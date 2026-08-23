@@ -310,17 +310,31 @@ public struct ClipboardStore: Sendable {
     /// Cuántos elementos vivos tiene cada pinboard, para el contador de la barra
     /// lateral. Los pinboards vacíos no salen en el diccionario.
     public func pinboardCounts() throws -> [UUID: Int] {
-        try db.reader.read { db in
-            let rows = try Row.fetchAll(db, sql: """
-                SELECT pinboardID, COUNT(*) AS count
-                FROM clipboardItem
-                WHERE deletedAt IS NULL AND pinboardID IS NOT NULL
-                GROUP BY pinboardID
-                """)
-            return rows.reduce(into: [:]) { counts, row in
-                guard let id = UUID(uuidString: row["pinboardID"]) else { return }
-                counts[id] = row["count"]
-            }
+        try db.reader.read(Self.pinboardCounts(in:))
+    }
+
+    /// Secuencia que emite los contadores cada vez que cambian.
+    ///
+    /// Va aparte de `observePinboards()` porque mover un elemento escribe en
+    /// `clipboardItem` y no en `pinboard`: observando solo los pinboards, el
+    /// número de la barra lateral se quedaba viejo justo después de un arrastre,
+    /// que es cuando más se mira.
+    public func observePinboardCounts() -> AsyncValueObservation<[UUID: Int]> {
+        ValueObservation
+            .tracking(Self.pinboardCounts(in:))
+            .values(in: db.reader)
+    }
+
+    private static func pinboardCounts(in db: Database) throws -> [UUID: Int] {
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT pinboardID, COUNT(*) AS count
+            FROM clipboardItem
+            WHERE deletedAt IS NULL AND pinboardID IS NOT NULL
+            GROUP BY pinboardID
+            """)
+        return rows.reduce(into: [:]) { counts, row in
+            guard let id = UUID(uuidString: row["pinboardID"]) else { return }
+            counts[id] = row["count"]
         }
     }
 

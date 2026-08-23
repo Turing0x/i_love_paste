@@ -10,16 +10,25 @@ struct HistoryView: View {
     @State private var model: HistoryListViewModel
     @State private var pinboards: PinboardListViewModel
 
+    /// La sincronización vive en el `AppEnvironment`, pero la vista no lo
+    /// necesita entero: le basta con saber si está en marcha y cómo pedirla.
+    private let isSyncing: Bool
+    private let onSync: () -> Void
+
     init(
         store: ClipboardStore,
         capture: SharedCapture?,
         model: HistoryListViewModel,
-        pinboards: PinboardListViewModel
+        pinboards: PinboardListViewModel,
+        isSyncing: Bool,
+        onSync: @escaping () -> Void
     ) {
         self.store = store
         self.capture = capture
         _model = State(initialValue: model)
         _pinboards = State(initialValue: pinboards)
+        self.isSyncing = isSyncing
+        self.onSync = onSync
     }
 
     var body: some View {
@@ -31,6 +40,7 @@ struct HistoryView: View {
                 // la misma función de cambiar de ámbito.
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) { scopeMenu }
+                    ToolbarItem(placement: .topBarTrailing) { syncButton }
                     ToolbarItem(placement: .topBarTrailing) { PasteButton(onCapture: capture) }
                 }
                 .searchable(text: $model.query, prompt: "Buscar en el historial")
@@ -43,6 +53,19 @@ struct HistoryView: View {
         .onDisappear {
             model.stop()
             pinboards.stop()
+        }
+    }
+
+    /// Sincronizar a mano.
+    ///
+    /// El push silencioso llega cuando el sistema quiere; esto es el camino para
+    /// cuando acabas de copiar algo en el Mac y lo quieres aquí ya.
+    @ViewBuilder
+    private var syncButton: some View {
+        if isSyncing {
+            ProgressView()
+        } else {
+            Button("Sincronizar", systemImage: "arrow.triangle.2.circlepath", action: onSync)
         }
     }
 

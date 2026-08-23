@@ -16,6 +16,7 @@ public final class PinboardListViewModel {
     public private(set) var error: String?
 
     private var observation: Task<Void, Never>?
+    private var countsObservation: Task<Void, Never>?
 
     public init(store: ClipboardStore) {
         self.store = store
@@ -29,10 +30,25 @@ public final class PinboardListViewModel {
                 for try await fresh in store.observePinboards() {
                     guard !Task.isCancelled else { return }
                     self.pinboards = fresh
-                    // Las cuentas se refrescan con la lista y no por su cuenta:
-                    // basta con que estén al día cuando el panel está abierto.
-                    self.refreshCounts()
                     self.error = nil
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                self.error = String(describing: error)
+            }
+        }
+
+        // Las cuentas van por su cuenta y no colgadas de la lista: mover un
+        // elemento a un pinboard escribe en `clipboardItem`, así que la lista no
+        // emite y el contador se quedaba viejo justo después de un arrastre.
+        countsObservation?.cancel()
+        countsObservation = Task { [weak self] in
+            guard let self else { return }
+            do {
+                for try await fresh in store.observePinboardCounts() {
+                    guard !Task.isCancelled else { return }
+                    self.counts = fresh
                 }
             } catch is CancellationError {
                 return
@@ -45,6 +61,8 @@ public final class PinboardListViewModel {
     public func stop() {
         observation?.cancel()
         observation = nil
+        countsObservation?.cancel()
+        countsObservation = nil
     }
 
     public func count(for pinboard: Pinboard) -> Int {
@@ -86,10 +104,6 @@ public final class PinboardListViewModel {
         guard after != nil || before != nil else { return }
 
         perform { try store.reorderPinboard(id: pinboard.id, after: after, before: before) }
-    }
-
-    private func refreshCounts() {
-        perform { counts = try store.pinboardCounts() }
     }
 
     /// Las escrituras no lanzan hacia la vista: un fallo se enseña, no revienta

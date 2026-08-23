@@ -43,6 +43,9 @@ struct PanelView: View {
             model.start()
             pinboards.start()
             searchFocused = true
+            // Abrir el panel es justo cuando se espera ver lo que se copió en el
+            // iPhone: se fuerza un ciclo en vez de esperar al push silencioso.
+            environment.syncNow(force: false)
         }
         .onDisappear {
             model.stop()

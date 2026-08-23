@@ -42,6 +42,9 @@ final class AppEnvironment {
     private var sync: CloudSyncEngine?
     private var retentionTimer: Timer?
 
+    /// Para que el botón de la barra pueda enseñar que está trabajando.
+    private(set) var isSyncing = false
+
     /// Mismos valores que en el Mac: el historial es uno solo y caducar distinto
     /// en cada dispositivo haría reaparecer elementos al sincronizar.
     private static let retentionMaxAge: TimeInterval = 30 * 24 * 3600
@@ -96,13 +99,21 @@ final class AppEnvironment {
         }
     }
 
-    /// Arranca el motor si estaba parado. `start()` es idempotente.
-    func syncNow() {
-        guard let sync else { return }
-        Task { try? await sync.start() }
-        // La sincronización trae elementos nuevos del Mac, y el widget no se
-        // entera solo. Es una petición, no una orden: WidgetKit decide cuándo.
-        WidgetCenter.shared.reloadAllTimelines()
+    /// Fuerza un ciclo de sincronización.
+    ///
+    /// Antes esto llamaba a `start()`, que es idempotente: con el motor ya
+    /// montado no hacía nada y volver a primer plano no traía nada del Mac.
+    func syncNow(force: Bool = false) {
+        guard let sync, !isSyncing else { return }
+        isSyncing = true
+        Task {
+            await sync.syncNow(force: force)
+            isSyncing = false
+            // El widget no se entera solo de lo que acaba de bajar, y pedírselo
+            // antes de que baje no sirve de nada. Es una petición, no una orden:
+            // WidgetKit decide cuándo.
+            WidgetCenter.shared.reloadAllTimelines()
+        }
     }
 
     private func startRetention(store: ClipboardStore) {
@@ -140,7 +151,9 @@ struct RootView: View {
                 store: store,
                 capture: environment.capture,
                 model: history,
-                pinboards: pinboards
+                pinboards: pinboards,
+                isSyncing: environment.isSyncing,
+                onSync: { environment.syncNow(force: true) }
             )
         } else {
             ContentUnavailableView(

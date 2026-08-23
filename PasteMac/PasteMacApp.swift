@@ -37,6 +37,11 @@ struct PasteMacApp: App {
             // una ociosa.
             Text(environment.syncStatusText).font(.caption)
 
+            // El push silencioso llega cuando el sistema quiere. Esto es el
+            // camino para cuando el usuario ya está mirando y no quiere esperar.
+            Button("Sincronizar ahora") { environment.syncNow() }
+                .disabled(!environment.syncEnabled)
+
             // El menú se reconstruye cada vez que se abre, así que basta con
             // leer el permiso aquí para que la opción desaparezca sola en
             // cuanto se conceda desde Ajustes.
@@ -208,13 +213,25 @@ final class AppEnvironment {
         Task { await sync.stop() }
     }
 
+    /// Fuerza un ciclo de sincronización.
+    ///
+    /// Lo llama el menú y también la apertura del panel: abrirlo es justo cuando
+    /// el usuario espera ver lo que copió en el iPhone. La apertura no lo fuerza
+    /// —el panel se abre muchas veces al día— y el botón sí.
+    func syncNow(force: Bool = true) {
+        guard let sync, syncEnabled else { return }
+        Task { await sync.syncNow(force: force) }
+    }
+
     private static func describe(_ status: CloudSyncEngine.Status) -> String {
         switch status {
         case .detenida: "Sincronización detenida"
         case .sincronizando: "Sincronizando…"
         case .alDia(let date):
             "Al día · \(date.formatted(date: .omitted, time: .shortened))"
-        case .fallo: "Error de sincronización"
+        // El motivo se enseña recortado: "Error de sincronización" a secas no
+        // deja nada que hacer al que lo lee.
+        case .fallo(let reason): "Error de sincronización · \(reason.prefix(80))"
         }
     }
 
