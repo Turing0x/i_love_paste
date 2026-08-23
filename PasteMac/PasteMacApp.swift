@@ -147,9 +147,10 @@ final class AppEnvironment {
         // El modelo se crea una vez y sobrevive entre aperturas: reconstruirlo
         // en cada `show` volvería a consultar la base y haría parpadear la lista.
         let model = HistoryListViewModel(store: store)
+        let pinboards = PinboardListViewModel(store: store)
         panel.configure { [weak self] in
             guard let self else { return AnyView(EmptyView()) }
-            return AnyView(PanelView(environment: self, model: model))
+            return AnyView(PanelView(environment: self, model: model, pinboards: pinboards))
         }
         hotKeys.register(.optionCommandV) { [weak self] in
             self?.panel.toggle()

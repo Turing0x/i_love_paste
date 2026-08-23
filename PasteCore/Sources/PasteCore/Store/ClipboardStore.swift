@@ -116,13 +116,7 @@ public struct ClipboardStore: Sendable {
         before: Double?,
         at date: Date = Date()
     ) throws {
-        let newOrder: Double
-        switch (after, before) {
-        case let (lo?, hi?): newOrder = (lo + hi) / 2
-        case let (lo?, nil): newOrder = lo + 1
-        case let (nil, hi?): newOrder = hi - 1
-        case (nil, nil): newOrder = 0
-        }
+        let newOrder = Self.fractionalOrder(after: after, before: before)
         try db.writer.write { db in
             _ = try ClipboardItem
                 .filter(key: id.uuidString)
@@ -235,13 +229,98 @@ public struct ClipboardStore: Sendable {
         }
     }
 
+    /// Crea un pinboard al final de la lista.
+    ///
+    /// Existe además de `save` para que quien lo llame no tenga que inventarse
+    /// el `sortOrder`: calcularlo mal deja dos pinboards empatados y el orden
+    /// de la barra lateral pasa a depender de la suerte.
+    @discardableResult
+    public func createPinboard(
+        name: String,
+        colorHex: String = Pinboard.defaultColorHex,
+        at date: Date = Date()
+    ) throws -> Pinboard {
+        try db.writer.write { db in
+            let pinboard = Pinboard(
+                name: name,
+                colorHex: colorHex,
+                sortOrder: try Self.nextPinboardSortOrder(db),
+                createdAt: date,
+                updatedAt: date
+            )
+            try pinboard.insert(db)
+            return pinboard
+        }
+    }
+
     /// Pinboards vivos, en su orden manual.
     public func pinboards() throws -> [Pinboard] {
         try db.reader.read { db in
-            try Pinboard
-                .filter(Pinboard.Columns.deletedAt == nil)
-                .order(Pinboard.Columns.sortOrder)
-                .fetchAll(db)
+            try Self.livePinboards().fetchAll(db)
+        }
+    }
+
+    /// Secuencia que emite los pinboards cada vez que cambian.
+    ///
+    /// La barra lateral tiene que repintarse sola al crear, renombrar o borrar,
+    /// igual que la lista se repinta al copiar.
+    public func observePinboards() -> AsyncValueObservation<[Pinboard]> {
+        ValueObservation
+            .tracking { db in
+                try Self.livePinboards().fetchAll(db)
+            }
+            .values(in: db.reader)
+    }
+
+    /// Cambia el nombre, el color, o ambos. Lo que llegue `nil` se deja como está.
+    public func updatePinboard(
+        id: UUID,
+        name: String? = nil,
+        colorHex: String? = nil,
+        at date: Date = Date()
+    ) throws {
+        var assignments: [ColumnAssignment] = [Pinboard.Columns.updatedAt.set(to: date)]
+        if let name { assignments.append(Pinboard.Columns.name.set(to: name)) }
+        if let colorHex { assignments.append(Pinboard.Columns.colorHex.set(to: colorHex)) }
+
+        try db.writer.write { db in
+            _ = try Pinboard.filter(key: id.uuidString).updateAll(db, assignments)
+        }
+    }
+
+    /// Recoloca un pinboard entre otros dos. Mismo orden fraccional que los
+    /// elementos: reordenar reescribe una fila, no la lista entera.
+    public func reorderPinboard(
+        id: UUID,
+        after: Double?,
+        before: Double?,
+        at date: Date = Date()
+    ) throws {
+        let newOrder = Self.fractionalOrder(after: after, before: before)
+        try db.writer.write { db in
+            _ = try Pinboard
+                .filter(key: id.uuidString)
+                .updateAll(db, [
+                    Pinboard.Columns.sortOrder.set(to: newOrder),
+                    Pinboard.Columns.updatedAt.set(to: date)
+                ])
+        }
+    }
+
+    /// Cuántos elementos vivos tiene cada pinboard, para el contador de la barra
+    /// lateral. Los pinboards vacíos no salen en el diccionario.
+    public func pinboardCounts() throws -> [UUID: Int] {
+        try db.reader.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT pinboardID, COUNT(*) AS count
+                FROM clipboardItem
+                WHERE deletedAt IS NULL AND pinboardID IS NOT NULL
+                GROUP BY pinboardID
+                """)
+            return rows.reduce(into: [:]) { counts, row in
+                guard let id = UUID(uuidString: row["pinboardID"]) else { return }
+                counts[id] = row["count"]
+            }
         }
     }
 
@@ -424,6 +503,33 @@ public struct ClipboardStore: Sendable {
         case .history, .everything:
             return request.order(ClipboardItem.Columns.createdAt.desc)
         }
+    }
+
+    /// Punto medio entre dos vecinos, o un paso más allá si solo hay uno.
+    ///
+    /// Es lo que permite reordenar tocando una sola fila: en vez de renumerar
+    /// del 1 al n, el elemento movido se queda con un valor intermedio.
+    static func fractionalOrder(after: Double?, before: Double?) -> Double {
+        switch (after, before) {
+        case let (lo?, hi?): return (lo + hi) / 2
+        case let (lo?, nil): return lo + 1
+        case let (nil, hi?): return hi - 1
+        case (nil, nil): return 0
+        }
+    }
+
+    private static func livePinboards() -> QueryInterfaceRequest<Pinboard> {
+        Pinboard
+            .filter(Pinboard.Columns.deletedAt == nil)
+            .order(Pinboard.Columns.sortOrder)
+    }
+
+    private static func nextPinboardSortOrder(_ db: Database) throws -> Double {
+        let maxOrder = try Double.fetchOne(
+            db,
+            livePinboards().select(max(Pinboard.Columns.sortOrder))
+        )
+        return (maxOrder ?? 0) + 1
     }
 
     private static func nextSortOrder(_ db: Database, pinboardID: UUID?) throws -> Double {

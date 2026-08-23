@@ -310,6 +310,98 @@ private func textItem(
     #expect(despues[2].sortOrder == antes[1].sortOrder)
 }
 
+@Test func crearUnPinboardLoColocaAlFinal() throws {
+    let store = try makeStore()
+
+    let primero = try store.createPinboard(name: "Trabajo")
+    let segundo = try store.createPinboard(name: "Programación")
+
+    #expect(segundo.sortOrder > primero.sortOrder)
+    try #expect(store.pinboards().map(\.name) == ["Trabajo", "Programación"])
+}
+
+@Test func reordenarPinboardsLosDejaEnElOrdenPedido() throws {
+    let store = try makeStore()
+    let a = try store.createPinboard(name: "A")
+    let b = try store.createPinboard(name: "B")
+    let c = try store.createPinboard(name: "C")
+
+    // Mover "C" entre "A" y "B".
+    try store.reorderPinboard(id: c.id, after: a.sortOrder, before: b.sortOrder)
+
+    try #expect(store.pinboards().map(\.name) == ["A", "C", "B"])
+}
+
+@Test func actualizarUnPinboardCambiaNombreColorYFecha() throws {
+    let store = try makeStore()
+    let creado = try Date(timeIntervalSince1970: 1000)
+    let board = try store.createPinboard(name: "Sin título", at: creado)
+
+    try store.updatePinboard(
+        id: board.id,
+        name: "Trabajo",
+        colorHex: "FF3B30",
+        at: Date(timeIntervalSince1970: 2000)
+    )
+
+    let actualizado = try #require(try store.pinboards().first)
+    #expect(actualizado.name == "Trabajo")
+    #expect(actualizado.colorHex == "FF3B30")
+    // La sincronización desempatará por `updatedAt`: si no se mueve, el cambio
+    // sería invisible para el otro dispositivo.
+    #expect(actualizado.updatedAt > creado)
+}
+
+@Test func actualizarSoloElColorConservaElNombre() throws {
+    let store = try makeStore()
+    let board = try store.createPinboard(name: "Trabajo")
+
+    try store.updatePinboard(id: board.id, colorHex: "34C759")
+
+    let actualizado = try #require(try store.pinboards().first)
+    #expect(actualizado.name == "Trabajo")
+    #expect(actualizado.colorHex == "34C759")
+}
+
+@Test func lasCuentasIgnoranLapidasYPinboardsVacios() throws {
+    let store = try makeStore()
+    let board = try store.createPinboard(name: "Trabajo")
+    let vacio = try store.createPinboard(name: "Vacío")
+
+    let vivo = try store.capture(textItem("uno"))
+    let borrado = try store.capture(textItem("dos"))
+    try store.move(id: vivo.id, toPinboard: board.id)
+    try store.move(id: borrado.id, toPinboard: board.id)
+    try store.softDelete(id: borrado.id)
+
+    let cuentas = try store.pinboardCounts()
+    #expect(cuentas[board.id] == 1)
+    #expect(cuentas[vacio.id] == nil)
+}
+
+@Test func borrarUnPinboardDevuelveSusElementosAlHistorial() throws {
+    let store = try makeStore()
+    let board = try store.createPinboard(name: "Trabajo")
+    let item = try store.capture(textItem("firma"))
+    try store.move(id: item.id, toPinboard: board.id)
+
+    try store.deletePinboard(id: board.id)
+
+    // Perder contenido guardado a propósito por borrar la carpeta que lo
+    // contenía sería lo peor que puede hacer esta app.
+    try #expect(store.pinboards().isEmpty)
+    try #expect(store.items(matching: .history).map(\.id) == [item.id])
+}
+
+@Test func laObservacionDePinboardsEmiteElOrdenManual() async throws {
+    let store = try makeStore()
+    try store.createPinboard(name: "Trabajo")
+    try store.createPinboard(name: "Programación")
+
+    var iterator = store.observePinboards().makeAsyncIterator()
+    #expect(try await iterator.next()?.map(\.name) == ["Trabajo", "Programación"])
+}
+
 // MARK: - Retención
 
 @Test func laRetencionPorAntiguedadNoTocaLosPinboards() throws {

@@ -7,7 +7,9 @@ final class PanelController: NSObject, NSWindowDelegate {
     private var panel: FloatingPanel?
     private var makeContent: (() -> AnyView)?
 
-    private static let size = NSSize(width: 620, height: 460)
+    /// Más ancho que en M2: la barra lateral de pinboards se lleva 170pt y sin
+    /// ellos la lista se quedaba estrecha.
+    private static let size = NSSize(width: 800, height: 460)
 
     /// App que estaba delante cuando se abrió el panel.
     ///

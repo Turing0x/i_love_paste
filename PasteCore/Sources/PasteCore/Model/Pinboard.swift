@@ -20,7 +20,7 @@ public struct Pinboard: Codable, Identifiable, Equatable, Sendable {
     public init(
         id: UUID = UUID(),
         name: String,
-        colorHex: String = "8E8E93",
+        colorHex: String = Pinboard.defaultColorHex,
         sortOrder: Double = 0,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
@@ -34,6 +34,10 @@ public struct Pinboard: Codable, Identifiable, Equatable, Sendable {
         self.updatedAt = updatedAt
         self.deletedAt = deletedAt
     }
+
+    /// Gris del sistema. El color es decoración, así que un pinboard recién
+    /// creado tiene que verse bien sin que nadie elija nada.
+    public static let defaultColorHex = "8E8E93"
 }
 
 extension Pinboard: FetchableRecord, PersistableRecord {
@@ -50,6 +54,7 @@ extension Pinboard: FetchableRecord, PersistableRecord {
     public enum Columns {
         public static let id = Column("id")
         public static let name = Column("name")
+        public static let colorHex = Column("colorHex")
         public static let sortOrder = Column("sortOrder")
         public static let updatedAt = Column("updatedAt")
         public static let deletedAt = Column("deletedAt")

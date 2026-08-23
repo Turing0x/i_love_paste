@@ -5,20 +5,34 @@ import SwiftUI
 struct PanelView: View {
     let environment: AppEnvironment
     @State private var model: HistoryListViewModel
+    @State private var pinboards: PinboardListViewModel
     @FocusState private var searchFocused: Bool
 
-    init(environment: AppEnvironment, model: HistoryListViewModel) {
+    init(
+        environment: AppEnvironment,
+        model: HistoryListViewModel,
+        pinboards: PinboardListViewModel
+    ) {
         self.environment = environment
         self._model = State(initialValue: model)
+        self._pinboards = State(initialValue: pinboards)
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            searchField
+        HStack(spacing: 0) {
+            PinboardSidebar(
+                model: pinboards,
+                scope: $model.scope,
+                moveItem: move
+            )
             Divider()
-            filterBar
-            Divider()
-            list
+            VStack(spacing: 0) {
+                searchField
+                Divider()
+                filterBar
+                Divider()
+                list
+            }
         }
         .background(.regularMaterial)
         .onAppear {
@@ -27,9 +41,13 @@ struct PanelView: View {
             // búsqueda de la vez anterior desconcierta.
             model.reset()
             model.start()
+            pinboards.start()
             searchFocused = true
         }
-        .onDisappear { model.stop() }
+        .onDisappear {
+            model.stop()
+            pinboards.stop()
+        }
         // Las teclas se interceptan aquí arriba para que el campo de búsqueda,
         // que conserva el foco todo el rato, no se quede con las flechas.
         .onKeyPress(.upArrow) { model.moveSelection(by: -1); return .handled }
@@ -120,15 +138,17 @@ struct PanelView: View {
                         )
                         .id(item.id)
                         .onTapGesture { use(item) }
-                        .contextMenu {
-                            Button("Pegar") { use(item) }
-                            Button("Pegar como texto plano") {
-                                use(item, asPlainText: true)
-                            }
-                            Divider()
-                            Button("Borrar", role: .destructive) {
-                                try? environment.store?.softDelete(id: item.id)
-                            }
+                        .contextMenu { menu(for: item) }
+                        .draggable(ItemTransfer(id: item.id))
+                        // Reordenar solo tiene sentido dentro de un pinboard:
+                        // en el historial el orden es la fecha.
+                        .dropDestination(for: ItemTransfer.self) { transfers, _ in
+                            guard model.allowsManualOrder,
+                                  let first = transfers.first,
+                                  let dragged = model.items.first(where: { $0.id == first.id })
+                            else { return false }
+                            model.move(dragged, before: index)
+                            return true
                         }
                     }
                 }
@@ -155,6 +175,38 @@ struct PanelView: View {
                 )
             }
         }
+    }
+
+    @ViewBuilder
+    private func menu(for item: ClipboardItem) -> some View {
+        Button("Pegar") { use(item) }
+        Button("Pegar como texto plano") { use(item, asPlainText: true) }
+
+        Divider()
+
+        // El menú duplica lo que hace el arrastre a propósito: es el camino
+        // descubrible, y el único accesible desde el teclado.
+        if !pinboards.pinboards.isEmpty {
+            Menu("Añadir a pinboard") {
+                ForEach(pinboards.pinboards) { board in
+                    Button(board.name) { move(item.id, to: board.id) }
+                }
+            }
+        }
+        if item.pinboardID != nil {
+            Button("Quitar del pinboard") { move(item.id, to: nil) }
+        }
+
+        Divider()
+
+        Button("Borrar", role: .destructive) {
+            try? environment.store?.softDelete(id: item.id)
+        }
+    }
+
+    /// Mueve un elemento a un pinboard, o lo devuelve al historial con `nil`.
+    private func move(_ id: UUID, to pinboardID: UUID?) {
+        try? environment.store?.move(id: id, toPinboard: pinboardID)
     }
 
     private func activateSelection(asPlainText: Bool = false) {

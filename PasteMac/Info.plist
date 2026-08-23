@@ -22,5 +22,31 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSHumanReadableCopyright</key>
 	<string></string>
+	<!-- Tipos propios del arrastre interno. Se declaran aunque nunca salgan de
+	     la app: sin declarar, el sistema los reconoce a ratos y el arrastre
+	     deja de funcionar al reiniciar. -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>dev.threedots.paste.item</string>
+			<key>UTTypeDescription</key>
+			<string>Elemento de Paste</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>dev.threedots.paste.pinboard</string>
+			<key>UTTypeDescription</key>
+			<string>Pinboard de Paste</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

@@ -54,5 +54,5 @@ cd PasteCore && swift test
 - [x] **M2** — Panel flotante ⌥⌘V, búsqueda en vivo, filtros, Quick Paste ⌘1–9
 - [ ] **M2b** — Imágenes y ficheros (aplazado)
 - [x] **M3** — Direct Paste (Accesibilidad), pegar como texto plano
-- [ ] **M4** — Pinboards
+- [x] **M4** — Pinboards: barra lateral, colores, drag & drop
 - [ ] **M5** — Ajustes, retención, edición

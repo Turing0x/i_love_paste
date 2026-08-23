@@ -7,6 +7,8 @@ import PasteCore
 final class HistoryListViewModel {
     private let store: ClipboardStore
 
+    /// Ámbito visible: el historial suelto, un pinboard, o todo junto.
+    var scope: HistoryFilter.Scope = .history { didSet { restartIfNeeded(oldValue) } }
     var query: String = "" { didSet { restartIfNeeded(oldValue) } }
     var kinds: Set<ContentKind> = [] { didSet { restartIfNeeded(oldValue) } }
     var bundleID: String? { didSet { restartIfNeeded(oldValue) } }
@@ -53,6 +55,7 @@ final class HistoryListViewModel {
     /// Deja la búsqueda como estaba al abrir: el panel se usa muchas veces al
     /// día y arrastrar el filtro de la vez anterior sorprende.
     func reset() {
+        scope = .history
         query = ""
         kinds = []
         bundleID = nil
@@ -68,7 +71,7 @@ final class HistoryListViewModel {
         observation?.cancel()
 
         var filter = HistoryFilter(
-            scope: .history,
+            scope: scope,
             kinds: kinds,
             bundleIDs: bundleID.map { [$0] } ?? []
         )
@@ -95,6 +98,33 @@ final class HistoryListViewModel {
             } catch {
                 self.error = String(describing: error)
             }
+        }
+    }
+
+    /// Dentro de un pinboard el orden lo pone el usuario; en el historial lo
+    /// pone la fecha y no es negociable.
+    var allowsManualOrder: Bool {
+        if case .pinboard = scope { return true }
+        return false
+    }
+
+    /// Recoloca un elemento delante del que ocupa `index`, o al final con `nil`.
+    func move(_ item: ClipboardItem, before index: Int?) {
+        guard allowsManualOrder else { return }
+
+        // El propio arrastrado no cuenta como vecino: soltarlo sobre sí mismo
+        // lo mandaría a un hueco que no existe.
+        let others = items.filter { $0.id != item.id }
+        let target = index.map { min($0, others.count) } ?? others.count
+
+        let after = target > 0 ? others[target - 1].sortOrder : nil
+        let before = target < others.count ? others[target].sortOrder : nil
+        guard after != nil || before != nil else { return }
+
+        do {
+            try store.reorder(id: item.id, after: after, before: before)
+        } catch {
+            self.error = String(describing: error)
         }
     }
 
