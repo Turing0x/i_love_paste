@@ -36,7 +36,11 @@ final class FloatingPanel: NSPanel {
         // Sin esto el panel se escondería solo cada vez que otra app pasa al
         // frente, que es exactamente lo que ocurre siempre al abrirlo.
         hidesOnDeactivate = false
-        isMovableByWindowBackground = true
+        // `isMovableByWindowBackground` se queda en `false` a propósito: con él,
+        // AppKit se queda con el `mouseDown` de cualquier zona de fondo —y una
+        // fila de SwiftUI lo es— y arrastrar un elemento movía el panel entero
+        // en vez de empezar el arrastre. No se pierde nada: `show()` recalcula
+        // el marco en cada apertura, así que moverlo a mano nunca duraba.
         animationBehavior = .utilityWindow
 
         // Aparece en el escritorio activo y también sobre apps a pantalla
