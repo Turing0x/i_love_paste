@@ -50,9 +50,27 @@ targets:
       - path: PasteiOS
     dependencies:
       - package: PasteCore
+      # Embebida en la app: se instala y se firma con ella.
+      - target: PasteShareExtension
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.threedots.paste.ios
         INFOPLIST_FILE: PasteiOS/Info.plist
         CODE_SIGN_ENTITLEMENTS: PasteiOS/PasteiOS.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+
+  PasteShareExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: PasteShareExtension
+    dependencies:
+      - package: PasteCore
+    settings:
+      base:
+        # El identificador cuelga del de la app: si no, el sistema no la
+        # reconoce como su extensión.
+        PRODUCT_BUNDLE_IDENTIFIER: dev.threedots.paste.ios.share
+        INFOPLIST_FILE: PasteShareExtension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: PasteShareExtension/PasteShareExtension.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"

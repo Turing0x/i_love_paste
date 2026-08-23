@@ -50,6 +50,17 @@ cd PasteCore && swift test
 - **`clipboardItem` no tiene clave ajena contra `pinboard`** desde la migración
   `v2.sync`. Al sincronizar, un elemento puede llegar antes que el pinboard al
   que pertenece, porque el servidor entrega los cambios por lotes.
+- **La app de iPhone y su extensión comparten base** a través del App Group
+  `group.dev.threedots.paste`. El Mac no lo usa: no tiene extensiones, y moverle
+  la base dejaría huérfano su historial. Si el grupo no está disponible,
+  `AppPaths` falla en vez de caer al contenedor propio — el fallback silencioso
+  daría dos historiales que nadie ve.
+- **En iOS no hay captura en segundo plano** (§39). El contenido entra por el
+  botón de pegar del sistema y por la Share Extension, y las dos puertas pasan
+  por `SharedCapture`, así que comparten política con el capturador del Mac.
+- **La Share Extension no sincroniza**: escribe en local y la app sube lo
+  encolado al abrirse.
+
 - **Para probar la sincronización con un solo Mac**, `PASTE_DB_PATH` mueve la
   base y las preferencias de una instancia, de modo que dos copias de la app se
   comportan como dos dispositivos distintos. Solo en compilaciones de depuración.
@@ -59,9 +70,8 @@ cd PasteCore && swift test
 
 ## Estado
 
-La app de macOS está cerrada como producto: captura, panel, búsqueda, pegado y
-organización. Lo que falta ya no es funcionalidad de escritorio, es el segundo
-dispositivo.
+Mac y iPhone funcionan y comparten historial por iCloud. Lo que queda del
+documento de referencia son las piezas accesorias de iOS.
 
 - [x] **M0** — Estructura, esquema GRDB + FTS5, tests
 - [x] **M1** — Capturador de `NSPasteboard`, dedup, exclusiones, pausa, copiar al pulsar
@@ -69,7 +79,8 @@ dispositivo.
 - [x] **M3** — Direct Paste (Accesibilidad), pegar como texto plano
 - [x] **M4** — Pinboards: barra lateral, colores, drag & drop
 - [x] **M6** — Sincronización por CloudKit (`CKSyncEngine`, base privada, campos cifrados)
-- [ ] **M7** — App de iPhone: extensiones de compartir y de acción, teclado, widget
+- [x] **M7** — App de iPhone y Share Extension
+- [ ] **M8** — Teclado y widget de iPhone
 
 ### Aplazado
 

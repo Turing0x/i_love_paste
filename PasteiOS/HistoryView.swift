@@ -5,11 +5,13 @@ import UIKit
 /// Pantalla principal: historial, pinboards, búsqueda y filtros.
 struct HistoryView: View {
     private let store: ClipboardStore
+    private let capture: SharedCapture?
     @State private var model: HistoryListViewModel
     @State private var pinboards: PinboardListViewModel
 
-    init(store: ClipboardStore) {
+    init(store: ClipboardStore, capture: SharedCapture?) {
         self.store = store
+        self.capture = capture
         _model = State(initialValue: HistoryListViewModel(store: store))
         _pinboards = State(initialValue: PinboardListViewModel(store: store))
     }
@@ -153,20 +155,10 @@ struct HistoryView: View {
         try? store.move(id: item.id, toPinboard: pinboardID)
     }
 
+    /// Guarda lo pegado. La política —tipos sensibles, tope de tamaño,
+    /// deduplicación— la decide `SharedCapture`, que es el mismo camino que usa
+    /// la Share Extension.
     private func capture(_ snapshot: PasteboardSnapshot) {
-        let settings = CaptureSettingsStore(
-            defaults: UserDefaults(suiteName: AppPaths.sharedGroupIdentifier) ?? .standard
-        )
-        let engine = CaptureEngine(settings: settings.load(), deviceID: settings.deviceID())
-
-        // Misma política que en el Mac: tipos sensibles, tope de tamaño y
-        // deduplicación se deciden en un solo sitio.
-        guard case .capture(let item) = engine.decide(
-            snapshot,
-            lastChangeCount: -1,
-            frontmost: nil
-        ) else { return }
-
-        try? store.capture(item)
+        try? capture?.capture(snapshot)
     }
 }

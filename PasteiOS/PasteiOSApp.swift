@@ -29,14 +29,9 @@ struct PasteiOSApp: App {
 @Observable
 final class AppEnvironment {
     private(set) var store: ClipboardStore?
+    private(set) var capture: SharedCapture?
     private(set) var openError: String?
 
-    /// Preferencias en el dominio del grupo, no en el propio: las extensiones
-    /// tienen que ver el mismo `deviceID` que la app o cada una se presentaría
-    /// como un dispositivo distinto al sincronizar.
-    private let settings = CaptureSettingsStore(
-        defaults: UserDefaults(suiteName: AppPaths.sharedGroupIdentifier) ?? .standard
-    )
     private var sync: CloudSyncEngine?
     private var retentionTimer: Timer?
 
@@ -47,15 +42,16 @@ final class AppEnvironment {
 
     init() {
         do {
-            // Con el grupo compartido, no en el contenedor propio: es lo que
-            // hace que la Share Extension escriba donde la app lee.
-            let url = try AppPaths.databaseURL(appGroup: AppPaths.sharedGroupIdentifier)
-            let db = try AppDatabase.open(at: url)
-            let store = ClipboardStore(db)
+            // `SharedCapture` abre la base en el grupo compartido, que es lo que
+            // hace que la Share Extension escriba donde la app lee, y trae ya la
+            // política de captura montada.
+            let capture = try SharedCapture()
+            let store = capture.store
+            self.capture = capture
             self.store = store
 
             try store.registerDevice(Device(
-                id: settings.deviceID(),
+                id: capture.deviceID,
                 name: UIDevice.current.name,
                 platform: .iOS
             ))
@@ -105,7 +101,7 @@ struct RootView: View {
 
     var body: some View {
         if let store = environment.store {
-            HistoryView(store: store)
+            HistoryView(store: store, capture: environment.capture)
         } else {
             ContentUnavailableView(
                 "No se pudo abrir el historial",

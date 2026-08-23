@@ -31,6 +31,17 @@ public struct AppDatabase: Sendable {
         )
         var config = Configuration()
         config.foreignKeysEnabled = true
+
+        #if os(iOS)
+        // iOS mata con `0xdead10cc` a un proceso que queda suspendido
+        // sosteniendo un bloqueo sobre un fichero de un contenedor compartido, y
+        // aquí escriben dos: la app y la Share Extension. Con esto GRDB suelta
+        // el bloqueo al pasar a segundo plano en vez de esperar a que el sistema
+        // lo resuelva a lo bruto.
+        //
+        // En macOS no existe ese modo de fallo, así que allí solo sería ruido.
+        config.observesSuspensionNotifications = true
+        #endif
         return try AppDatabase(try DatabasePool(path: url.path, configuration: config))
     }
 }
