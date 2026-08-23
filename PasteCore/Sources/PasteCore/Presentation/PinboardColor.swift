@@ -3,12 +3,15 @@ import SwiftUI
 /// Colores disponibles para un pinboard.
 ///
 /// Es una paleta cerrada y no una rueda de color por dos razones: cualquier
-/// selector de color de macOS es una ventana aparte, y este panel se cierra en
+/// selector de color de macOS es una ventana aparte, y el panel se cierra en
 /// cuanto pierde el foco; y una paleta elegida a mano garantiza que el punto de
 /// color se distinga sobre el material del panel en claro y en oscuro.
-enum PinboardColor {
+///
+/// Vive en `PasteCore` y no en el target del Mac porque la pantalla de
+/// pinboards de iOS ofrece la misma paleta: dos copias se irían separando.
+public enum PinboardColor {
     /// Los colores del sistema, en el orden en que los muestra macOS.
-    static let palette: [(name: String, hex: String)] = [
+    public static let palette: [(name: String, hex: String)] = [
         ("Rojo", "FF3B30"),
         ("Naranja", "FF9500"),
         ("Amarillo", "FFCC00"),
@@ -21,10 +24,10 @@ enum PinboardColor {
 
     /// Convierte un `RRGGBB` en color. Un valor ilegible cae en gris en vez de
     /// desaparecer: un pinboard sin punto parecería un fallo de pintado.
-    static func color(hex: String) -> Color {
+    public static func color(hex: String) -> Color {
         var value: UInt64 = 0
         guard Scanner(string: hex).scanHexInt64(&value), hex.count == 6 else {
-            return Color(.systemGray)
+            return .gray
         }
         return Color(
             red: Double((value >> 16) & 0xFF) / 255,

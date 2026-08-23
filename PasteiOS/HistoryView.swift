@@ -15,6 +15,8 @@ struct HistoryView: View {
     private let isSyncing: Bool
     private let onSync: () -> Void
 
+    @State private var showingPinboards = false
+
     init(
         store: ClipboardStore,
         capture: SharedCapture?,
@@ -45,6 +47,14 @@ struct HistoryView: View {
                 }
                 .searchable(text: $model.query, prompt: "Buscar en el historial")
                 .safeAreaInset(edge: .top) { kindFilters }
+                .sheet(isPresented: $showingPinboards) {
+                    PinboardsView(model: pinboards) { deletedID in
+                        // La lista no puede quedarse apuntando a un pinboard que
+                        // ya no existe: se vería vacía sin explicación.
+                        if model.scope == .pinboard(deletedID) { model.scope = .history }
+                        WidgetCenter.shared.reloadAllTimelines()
+                    }
+                }
         }
         .onAppear {
             model.start()
@@ -78,9 +88,7 @@ struct HistoryView: View {
                     .contentShape(.rect)
                     .onTapGesture { copy(item) }
                     .swipeActions(edge: .trailing) {
-                        Button("Borrar", role: .destructive) {
-                            try? store.softDelete(id: item.id)
-                        }
+                        Button("Borrar", role: .destructive) { delete(item) }
                     }
                     .swipeActions(edge: .leading) {
                         if item.pinboardID != nil {
@@ -121,6 +129,12 @@ struct HistoryView: View {
         if item.pinboardID != nil {
             Button("Quitar del pinboard") { move(item, to: nil) }
         }
+
+        Divider()
+
+        // El deslizamiento ya borraba, pero no se ve: quien viene del Mac busca
+        // el borrado donde está en el Mac, en el menú.
+        Button("Borrar", systemImage: "trash", role: .destructive) { delete(item) }
     }
 
     // MARK: - Barra
@@ -146,6 +160,11 @@ struct HistoryView: View {
                         model.scope = .pinboard(board.id)
                     }
                 }
+            }
+
+            Divider()
+            Button("Gestionar pinboards…", systemImage: "square.stack.3d.up") {
+                showingPinboards = true
             }
         } label: {
             Label("Ámbito", systemImage: "line.3.horizontal.decrease.circle")
@@ -178,6 +197,14 @@ struct HistoryView: View {
     private func copy(_ item: ClipboardItem) {
         guard let text = item.plainText else { return }
         UIPasteboard.general.string = text
+    }
+
+    /// Borrado lógico: la fila se queda con `deletedAt` para que el otro
+    /// dispositivo se entere en el siguiente ciclo en vez de reenviarla.
+    private func delete(_ item: ClipboardItem) {
+        try? store.softDelete(id: item.id)
+        // El widget lee la misma base, pero no se entera de que ha cambiado.
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     private func move(_ item: ClipboardItem, to pinboardID: UUID?) {
