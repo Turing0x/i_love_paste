@@ -442,3 +442,64 @@ private func textItem(
     let despues = try await iterator.next()
     #expect(despues?.map(\.plainText) == ["recién copiado"])
 }
+
+// MARK: - Búsqueda observada
+
+@Test func laObservacionConConsultaDevuelveSoloLoQueCasa() async throws {
+    let store = try makeStore()
+    try store.capture(textItem("flutter pub get"))
+    try store.capture(textItem("swift build"))
+
+    var iterator = store.observeItems(query: "flutter").makeAsyncIterator()
+    let resultados = try await iterator.next()
+
+    #expect(resultados?.map(\.plainText) == ["flutter pub get"])
+}
+
+@Test func laObservacionConConsultaSeRefrescaAlCapturar() async throws {
+    let store = try makeStore()
+    try store.capture(textItem("swift build"))
+
+    var iterator = store.observeItems(query: "flutter").makeAsyncIterator()
+    #expect(try await iterator.next()?.isEmpty == true)
+
+    // Es la prueba de que GRDB observa también el índice FTS: sin eso, la
+    // búsqueda en vivo del panel se quedaría congelada.
+    try store.capture(textItem("flutter pub get"))
+
+    let despues = try await iterator.next()
+    #expect(despues?.map(\.plainText) == ["flutter pub get"])
+}
+
+@Test func laObservacionCombinaConsultaYFiltro() async throws {
+    let store = try makeStore()
+    try store.capture(textItem("informe anual", app: "com.apple.Safari", appName: "Safari"))
+    try store.capture(textItem("informe mensual", app: "com.microsoft.VSCode", appName: "Code"))
+
+    let soloCode = HistoryFilter(bundleIDs: ["com.microsoft.VSCode"])
+    var iterator = store.observeItems(query: "informe", matching: soloCode).makeAsyncIterator()
+
+    #expect(try await iterator.next()?.map(\.plainText) == ["informe mensual"])
+}
+
+@Test func laObservacionSinConsultaSeComportaComoElListado() async throws {
+    let store = try makeStore()
+    try store.capture(textItem("uno", at: Date(timeIntervalSince1970: 1000)))
+    try store.capture(textItem("dos", at: Date(timeIntervalSince1970: 2000)))
+
+    var iterator = store.observeItems(query: "  ").makeAsyncIterator()
+    // Un espacio no debe vaciar la pantalla, y el orden vuelve a ser por fecha.
+    #expect(try await iterator.next()?.map(\.plainText) == ["dos", "uno"])
+}
+
+@Test func laBusquedaPuntualYLaObservadaCoinciden() async throws {
+    let store = try makeStore()
+    try store.capture(textItem("revisar el código"))
+    try store.capture(textItem("compilar el proyecto"))
+
+    let puntual = try store.search("codigo")
+    var iterator = store.observeItems(query: "codigo").makeAsyncIterator()
+    let observada = try await iterator.next()
+
+    #expect(puntual.map(\.id) == observada?.map(\.id))
+}

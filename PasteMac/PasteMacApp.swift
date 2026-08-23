@@ -7,10 +7,30 @@ struct PasteMacApp: App {
     @State private var environment = AppEnvironment()
 
     var body: some Scene {
-        WindowGroup {
-            HistoryView(environment: environment)
+        // La app no tiene ventanas: vive en la barra de menús y se usa a través
+        // del panel flotante. Sin esta escena, sin icono en el Dock, no habría
+        // forma de salir ni de saber que está funcionando.
+        MenuBarExtra("Paste", systemImage: "doc.on.clipboard") {
+            Button("Mostrar Paste") { environment.panel.show() }
+                .keyboardShortcut("v", modifiers: [.option, .command])
+
+            Divider()
+
+            Toggle("Pausar captura", isOn: Binding(
+                get: { environment.isPaused },
+                set: { environment.isPaused = $0 }
+            ))
+
+            if let error = environment.openError {
+                Divider()
+                Text(error).font(.caption)
+            }
+
+            Divider()
+
+            Button("Salir de Paste") { NSApplication.shared.terminate(nil) }
+                .keyboardShortcut("q")
         }
-        .defaultSize(width: 560, height: 640)
     }
 }
 
@@ -27,8 +47,10 @@ final class AppEnvironment {
     private(set) var openError: String?
 
     let icons = AppIconCache()
+    let panel = PanelController()
 
     private let settingsStore = CaptureSettingsStore()
+    private let hotKeys = HotKeyCenter()
     private var retentionTimer: Timer?
 
     /// Historial conservado por defecto. Los elementos de un pinboard no caducan.
@@ -66,9 +88,23 @@ final class AppEnvironment {
             self.watcher = watcher
             self.writer = ClipboardWriter(watcher: watcher)
 
+            configurePanel(store: store)
             startRetention(store: store)
         } catch {
             openError = String(describing: error)
+        }
+    }
+
+    private func configurePanel(store: ClipboardStore) {
+        // El modelo se crea una vez y sobrevive entre aperturas: reconstruirlo
+        // en cada `show` volvería a consultar la base y haría parpadear la lista.
+        let model = HistoryListViewModel(store: store)
+        panel.configure { [weak self] in
+            guard let self else { return AnyView(EmptyView()) }
+            return AnyView(PanelView(environment: self, model: model))
+        }
+        hotKeys.register(.optionCommandV) { [weak self] in
+            self?.panel.toggle()
         }
     }
 

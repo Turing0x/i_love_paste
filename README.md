@@ -41,12 +41,18 @@ cd PasteCore && swift test
 - **La política de captura vive en `PasteCore`, no en la app**: `CaptureEngine`
   recibe una `PasteboardSnapshot` ya extraída, así que se prueba entera sin
   portapapeles real y la reutilizará la app de iPhone.
+- **La app no tiene ventanas** (`LSUIElement`): vive en la barra de menús. Es lo
+  que permite que el panel flotante reciba teclado sin robarle el foco a la app
+  que tengas delante, requisito del Direct Paste.
+- **El atajo es ⌥⌘V, no ⇧⌘V**: registrar un atajo global se lo quita a todas las
+  apps, y ⇧⌘V es "Pegar y adaptar estilo" en macOS.
 
 ## Estado
 
 - [x] **M0** — Estructura, esquema GRDB + FTS5, tests
 - [x] **M1** — Capturador de `NSPasteboard`, dedup, exclusiones, pausa, copiar al pulsar
-- [ ] **M2** — Imágenes y ficheros, panel `NSPanel` no-activante, hotkey, búsqueda, filtros
-- [ ] **M3** — Direct Paste (Accesibilidad), Quick Paste ⌘1–9
+- [x] **M2** — Panel flotante ⌥⌘V, búsqueda en vivo, filtros, Quick Paste ⌘1–9
+- [ ] **M2b** — Imágenes y ficheros
+- [ ] **M3** — Direct Paste (Accesibilidad)
 - [ ] **M4** — Pinboards
 - [ ] **M5** — Ajustes, retención, edición

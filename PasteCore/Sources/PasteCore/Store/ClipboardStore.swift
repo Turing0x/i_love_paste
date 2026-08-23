@@ -159,39 +159,28 @@ public struct ClipboardStore: Sendable {
         matching filter: HistoryFilter = .history,
         limit: Int = 200
     ) throws -> [ClipboardItem] {
-        guard let pattern = FTS5Pattern(matchingAllPrefixesIn: query) else {
-            return try items(matching: filter, limit: limit)
-        }
-        return try db.reader.read { db in
-            // El `MATCH` va contra la tabla FTS, no contra `clipboardItem`, así
-            // que hay que unirlas por rowid en vez de filtrar directamente.
-            let ftsAlias = TableAlias<ClipboardItemFTS>()
-            let match = ClipboardItem.fts.aliased(ftsAlias).matching(pattern)
-
-            // El orden lo da la relevancia de FTS5 (`rank`), no la fecha: al
-            // buscar interesa el mejor resultado, no el más reciente.
-            return try Self.baseRequest(filter)
-                .joining(required: match)
-                .order(ftsAlias[Column.rank])
-                .limit(limit)
-                .fetchAll(db)
+        try db.reader.read { db in
+            try Self.request(query: query, filter: filter, limit: limit).fetchAll(db)
         }
     }
 
-    /// Secuencia que emite el listado completo cada vez que cambia algo que le
-    /// afecta.
+    /// Secuencia que emite el listado cada vez que cambia algo que le afecta.
     ///
     /// Es lo que hace que la lista se actualice sola al copiar, sin que el
-    /// capturador tenga que avisar a la interfaz: GRDB observa las tablas
-    /// implicadas y vuelve a ejecutar la consulta.
+    /// capturador tenga que avisar a la interfaz: GRDB deduce las tablas
+    /// implicadas de la propia consulta y la vuelve a ejecutar.
+    ///
+    /// Vale también para búsqueda en vivo. GRDB, ante cambios en tablas
+    /// virtuales, da la región por modificada, así que los resultados sobre el
+    /// índice FTS también se refrescan.
     public func observeItems(
+        query: String = "",
         matching filter: HistoryFilter = .history,
         limit: Int = 200
     ) -> AsyncValueObservation<[ClipboardItem]> {
         ValueObservation
             .tracking { db in
-                let request = Self.applyOrdering(Self.baseRequest(filter), scope: filter.scope)
-                return try request.limit(limit).fetchAll(db)
+                try Self.request(query: query, filter: filter, limit: limit).fetchAll(db)
             }
             .values(in: db.reader)
     }
@@ -359,6 +348,39 @@ public struct ClipboardStore: Sendable {
     }
 
     // MARK: - Auxiliares
+
+    /// Consulta única de la que salen el listado, la búsqueda puntual y la
+    /// observación en vivo.
+    ///
+    /// Tenerla en un solo sitio es lo que garantiza que el panel busque
+    /// exactamente sobre lo mismo que lista: cuando estaban separadas, solo el
+    /// camino de búsqueda sabía unirse al índice FTS.
+    static func request(
+        query: String,
+        filter: HistoryFilter,
+        limit: Int
+    ) -> QueryInterfaceRequest<ClipboardItem> {
+        let base = baseRequest(filter)
+
+        guard let pattern = FTS5Pattern(matchingAllPrefixesIn: query) else {
+            // Consulta vacía, o solo con signos que no producen ningún término:
+            // equivale a no buscar. Si devolviera nada, escribir un espacio
+            // vaciaría la pantalla.
+            return applyOrdering(base, scope: filter.scope).limit(limit)
+        }
+
+        // El `MATCH` va contra la tabla FTS, no contra `clipboardItem`, así que
+        // hay que unirlas por rowid en vez de filtrar directamente.
+        let ftsAlias = TableAlias<ClipboardItemFTS>()
+        let match = ClipboardItem.fts.aliased(ftsAlias).matching(pattern)
+
+        // Al buscar manda la relevancia de FTS5 (`rank`), no la fecha: interesa
+        // el mejor resultado, no el más reciente.
+        return base
+            .joining(required: match)
+            .order(ftsAlias[Column.rank])
+            .limit(limit)
+    }
 
     private static func baseRequest(_ filter: HistoryFilter) -> QueryInterfaceRequest<ClipboardItem> {
         var request = ClipboardItem.filter(ClipboardItem.Columns.deletedAt == nil)
