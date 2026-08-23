@@ -1,0 +1,54 @@
+name: Paste
+options:
+  bundleIdPrefix: dev.threedots.paste
+  deploymentTarget:
+    macOS: "14.0"
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+packages:
+  PasteCore:
+    path: PasteCore
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    # El paquete usa concurrencia estricta; los targets de app también, para que
+    # el capturador (hilo de fondo) y la interfaz no compartan estado por error.
+    SWIFT_STRICT_CONCURRENCY: complete
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  PasteMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: PasteMac
+    dependencies:
+      - package: PasteCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.threedots.paste.mac
+        INFOPLIST_FILE: PasteMac/Info.plist
+        CODE_SIGN_ENTITLEMENTS: PasteMac/PasteMac.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        # Sin sandbox a propósito: con él no hay permiso de Accesibilidad, ni
+        # detección de la app en primer plano, ni Direct Paste. Renuncia
+        # deliberada a distribuir por la Mac App Store.
+        ENABLE_APP_SANDBOX: NO
+
+  PasteiOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: PasteiOS
+    dependencies:
+      - package: PasteCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.threedots.paste.ios
+        INFOPLIST_FILE: PasteiOS/Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
