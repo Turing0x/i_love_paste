@@ -451,6 +451,37 @@ private func textItem(
     #expect(quedan.map(\.plainText) == ["item 4", "item 3"])
 }
 
+@Test func vaciarElHistorialNoTocaLosPinboards() throws {
+    let store = try makeStore()
+    let ahora = Date(timeIntervalSince1970: 100_000)
+
+    let suelto = try store.capture(textItem("uno"))
+    let otroSuelto = try store.capture(textItem("dos"))
+    let guardado = try store.capture(textItem("permanente"))
+    let board = Pinboard(name: "Trabajo")
+    try store.save(board)
+    try store.move(id: guardado.id, toPinboard: board.id)
+
+    let borrados = try store.softDeleteHistory(at: ahora)
+
+    #expect(borrados == 2)
+    try #expect(store.item(id: suelto.id)?.deletedAt == ahora)
+    try #expect(store.item(id: otroSuelto.id)?.deletedAt == ahora)
+    try #expect(store.item(id: guardado.id)?.deletedAt == nil)
+}
+
+@Test func vaciarElHistorialEncolaLosCambiosParaSincronizar() throws {
+    let store = try makeStore()
+    let item = try store.capture(textItem("uno"))
+
+    try store.softDeleteHistory()
+
+    // Los triggers de la base encolan también las escrituras masivas: sin esto
+    // el otro dispositivo reenviaría lo que se acaba de borrar.
+    let pendientes = try store.pendingChanges(limit: 10)
+    #expect(pendientes.contains { $0.recordName == item.id.uuidString })
+}
+
 @Test func purgarLapidasDevuelveLosBlobsHuerfanos() throws {
     let store = try makeStore()
     let item = ClipboardItem(

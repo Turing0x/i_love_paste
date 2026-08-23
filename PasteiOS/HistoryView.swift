@@ -16,6 +16,7 @@ struct HistoryView: View {
     private let onSync: () -> Void
 
     @State private var showingPinboards = false
+    @State private var showingClearConfirmation = false
 
     init(
         store: ClipboardStore,
@@ -55,6 +56,16 @@ struct HistoryView: View {
                         WidgetCenter.shared.reloadAllTimelines()
                     }
                 }
+                .confirmationDialog(
+                    "¿Vaciar el historial?",
+                    isPresented: $showingClearConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Vaciar historial", role: .destructive) { clearHistory() }
+                    Button("Cancelar", role: .cancel) {}
+                } message: {
+                    Text("Se borrarán los elementos sueltos. Lo que esté en un pinboard se conserva.")
+                }
         }
         .onAppear {
             model.start()
@@ -84,19 +95,18 @@ struct HistoryView: View {
     private var list: some View {
         List {
             ForEach(model.items) { item in
-                ItemRow(item: item)
-                    .contentShape(.rect)
-                    .onTapGesture { copy(item) }
-                    .swipeActions(edge: .trailing) {
-                        Button("Borrar", role: .destructive) { delete(item) }
-                    }
-                    .swipeActions(edge: .leading) {
-                        if item.pinboardID != nil {
-                            Button("Quitar") { move(item, to: nil) }
-                                .tint(.orange)
-                        }
-                    }
-                    .contextMenu { menu(for: item) }
+                HStack(spacing: 12) {
+                    // El toque para copiar se queda solo sobre el contenido: si
+                    // envolviera toda la fila se dispararía también al pulsar
+                    // los botones de la derecha.
+                    ItemRow(item: item)
+                        .contentShape(.rect)
+                        .onTapGesture { copy(item) }
+
+                    pinboardButton(for: item)
+                    deleteButton(for: item)
+                }
+                .contextMenu { menu(for: item) }
             }
         }
         .listStyle(.plain)
@@ -112,6 +122,55 @@ struct HistoryView: View {
                     )
                 )
             }
+        }
+    }
+
+    // MARK: - Acciones de la fila
+
+    /// Borrar, a la vista.
+    ///
+    /// Sustituye al deslizamiento: una acción que no se ve no existe para quien
+    /// no sabe que está ahí.
+    private func deleteButton(for item: ClipboardItem) -> some View {
+        Button {
+            delete(item)
+        } label: {
+            Image(systemName: "trash")
+                .foregroundStyle(.red)
+                .frame(width: 32, height: 32)
+                .contentShape(.rect)
+        }
+        // Sin `.plain` el `List` trata cualquier toque de la fila como pulsación
+        // de todos sus botones.
+        .buttonStyle(.plain)
+    }
+
+    /// Añadir a un pinboard, o sacarlo del que esté.
+    ///
+    /// No se muestra si no hay pinboards y el elemento no está en ninguno: sería
+    /// un menú vacío.
+    @ViewBuilder
+    private func pinboardButton(for item: ClipboardItem) -> some View {
+        let pinned = item.pinboardID != nil
+
+        if pinned || !pinboards.pinboards.isEmpty {
+            Menu {
+                if !pinboards.pinboards.isEmpty {
+                    ForEach(pinboards.pinboards) { board in
+                        Button(board.name) { move(item, to: board.id) }
+                    }
+                }
+                if pinned {
+                    Divider()
+                    Button("Quitar del pinboard") { move(item, to: nil) }
+                }
+            } label: {
+                Image(systemName: pinned ? "pin.fill" : "pin")
+                    .foregroundStyle(pinned ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                    .frame(width: 32, height: 32)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
         }
     }
 
@@ -166,6 +225,14 @@ struct HistoryView: View {
             Button("Gestionar pinboards…", systemImage: "square.stack.3d.up") {
                 showingPinboards = true
             }
+
+            Divider()
+
+            // La retención automática tarda 30 días; esto es para cuando se
+            // quiere el historial limpio ahora.
+            Button("Vaciar historial", systemImage: "trash", role: .destructive) {
+                showingClearConfirmation = true
+            }
         } label: {
             Label("Ámbito", systemImage: "line.3.horizontal.decrease.circle")
         }
@@ -209,13 +276,27 @@ struct HistoryView: View {
 
     private func move(_ item: ClipboardItem, to pinboardID: UUID?) {
         try? store.move(id: item.id, toPinboard: pinboardID)
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    /// Vacía el historial suelto. Los pinboards no se tocan: son justamente lo
+    /// que el usuario ha decidido conservar.
+    private func clearHistory() {
+        try? store.softDeleteHistory()
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     /// Guarda lo pegado. La política —tipos sensibles, tope de tamaño,
     /// deduplicación— la decide `SharedCapture`, que es el mismo camino que usa
     /// la Share Extension.
     private func capture(_ snapshot: PasteboardSnapshot) {
-        try? capture?.capture(snapshot)
+        // Si se está viendo un pinboard, lo pegado va a ese pinboard: cayendo en
+        // el historial suelto desaparecería de la lista en el acto y parecería
+        // que no se ha guardado.
+        var destination: UUID?
+        if case .pinboard(let id) = model.scope { destination = id }
+
+        try? capture?.capture(snapshot, pinboardID: destination)
         WidgetCenter.shared.reloadAllTimelines()
     }
 }

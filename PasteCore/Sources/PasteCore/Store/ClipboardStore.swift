@@ -598,6 +598,26 @@ public struct ClipboardStore: Sendable {
         }
     }
 
+    /// Marca como borrados todos los elementos del historial suelto.
+    ///
+    /// Mismo criterio que `applyRetention`: nunca toca lo que está en un
+    /// pinboard —su contenido no caduca— y es borrado lógico, porque el físico
+    /// haría que el otro dispositivo reenviara todo en el siguiente ciclo.
+    ///
+    /// - Returns: cuántos elementos se marcaron.
+    @discardableResult
+    public func softDeleteHistory(at date: Date = Date()) throws -> Int {
+        try db.writer.write { db in
+            try ClipboardItem
+                .filter(ClipboardItem.Columns.deletedAt == nil)
+                .filter(ClipboardItem.Columns.pinboardID == nil)
+                .updateAll(db, [
+                    ClipboardItem.Columns.deletedAt.set(to: date),
+                    ClipboardItem.Columns.updatedAt.set(to: date)
+                ])
+        }
+    }
+
     /// Borra de verdad las lápidas anteriores a `olderThan`, y devuelve las
     /// rutas de blob que quedaron sin dueño para que el llamante borre los
     /// ficheros.

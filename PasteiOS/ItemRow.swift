@@ -25,6 +25,10 @@ struct ItemRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             }
+
+            // Empuja hacia la izquierda: las acciones de la fila se colocan
+            // después de esta vista y tienen que quedar pegadas al borde.
+            Spacer(minLength: 0)
         }
         .padding(.vertical, 2)
     }
