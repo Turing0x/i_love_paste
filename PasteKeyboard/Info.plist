@@ -7,38 +7,38 @@
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundlePackageType</key>
-	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<string>XPC!</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>es</string>
 	<key>CFBundleName</key>
 	<string>Paste</string>
+	<key>CFBundleDisplayName</key>
+	<string>Paste</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>UILaunchScreen</key>
-	<dict/>
-	<!-- `CKSyncEngine` avisa por consola y deja de recibir push sin esto: es lo
-	     que permite que el iPhone se entere de lo que subió el Mac sin esperar a
-	     que el usuario abra la app. -->
-	<!-- Esquema propio para los enlaces del widget: `paste://scope/history` y
-	     `paste://scope/pinboard/<uuid>`. -->
-	<key>CFBundleURLTypes</key>
-	<array>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.keyboard-service</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>$(PRODUCT_MODULE_NAME).KeyboardViewController</string>
+		<key>NSExtensionAttributes</key>
 		<dict>
-			<key>CFBundleURLName</key>
-			<string>dev.threedots.paste</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>paste</string>
-			</array>
+			<key>IsASCIICapable</key>
+			<false/>
+			<key>PrefersRightToLeft</key>
+			<false/>
+			<key>PrimaryLanguage</key>
+			<string>es-ES</string>
+			<!-- Sin esto, iOS prohíbe al teclado leer el contenedor compartido y
+			     no habría historial que enseñar. Se pide en Ajustes, a mano. -->
+			<key>RequestsOpenAccess</key>
+			<true/>
 		</dict>
-	</array>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>remote-notification</string>
-	</array>
+	</dict>
 </dict>
 </plist>

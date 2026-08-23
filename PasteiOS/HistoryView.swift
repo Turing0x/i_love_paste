@@ -1,6 +1,7 @@
 import PasteCore
 import SwiftUI
 import UIKit
+import WidgetKit
 
 /// Pantalla principal: historial, pinboards, búsqueda y filtros.
 struct HistoryView: View {
@@ -9,11 +10,16 @@ struct HistoryView: View {
     @State private var model: HistoryListViewModel
     @State private var pinboards: PinboardListViewModel
 
-    init(store: ClipboardStore, capture: SharedCapture?) {
+    init(
+        store: ClipboardStore,
+        capture: SharedCapture?,
+        model: HistoryListViewModel,
+        pinboards: PinboardListViewModel
+    ) {
         self.store = store
         self.capture = capture
-        _model = State(initialValue: HistoryListViewModel(store: store))
-        _pinboards = State(initialValue: PinboardListViewModel(store: store))
+        _model = State(initialValue: model)
+        _pinboards = State(initialValue: pinboards)
     }
 
     var body: some View {
@@ -160,5 +166,6 @@ struct HistoryView: View {
     /// la Share Extension.
     private func capture(_ snapshot: PasteboardSnapshot) {
         try? capture?.capture(snapshot)
+        WidgetCenter.shared.reloadAllTimelines()
     }
 }

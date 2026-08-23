@@ -1,6 +1,7 @@
 import PasteCore
 import SwiftUI
 import UIKit
+import WidgetKit
 
 @main
 struct PasteiOSApp: App {
@@ -11,6 +12,7 @@ struct PasteiOSApp: App {
     var body: some Scene {
         WindowGroup {
             RootView(environment: environment)
+                .onOpenURL { environment.open($0) }
         }
         .onChange(of: scenePhase) { _, phase in
             // En iOS el push silencioso llega cuando el sistema quiere. Abrir la
@@ -31,6 +33,11 @@ final class AppEnvironment {
     private(set) var store: ClipboardStore?
     private(set) var capture: SharedCapture?
     private(set) var openError: String?
+
+    /// Los modelos viven aquí y no dentro de la vista para que algo de fuera
+    /// —tocar el widget— pueda cambiar el ámbito con la app ya abierta.
+    private(set) var history: HistoryListViewModel?
+    private(set) var pinboards: PinboardListViewModel?
 
     private var sync: CloudSyncEngine?
     private var retentionTimer: Timer?
@@ -56,6 +63,9 @@ final class AppEnvironment {
                 platform: .iOS
             ))
 
+            history = HistoryListViewModel(store: store)
+            pinboards = PinboardListViewModel(store: store)
+
             let sync = CloudSyncEngine(store: store)
             self.sync = sync
             Task { try? await sync.start() }
@@ -66,10 +76,33 @@ final class AppEnvironment {
         }
     }
 
+    /// Abre la lista que pide un enlace del widget.
+    ///
+    /// Formas admitidas: `paste://scope/history` y
+    /// `paste://scope/pinboard/<uuid>`. Un enlace que no se entienda se ignora:
+    /// abrir la app en el historial es un destino razonable para cualquier cosa.
+    func open(_ url: URL) {
+        guard url.scheme == "paste", url.host == "scope" else { return }
+        let parts = url.pathComponents.filter { $0 != "/" }
+
+        switch parts.first {
+        case "history":
+            history?.scope = .history
+        case "pinboard":
+            guard let id = parts.dropFirst().first.flatMap(UUID.init(uuidString:)) else { return }
+            history?.scope = .pinboard(id)
+        default:
+            break
+        }
+    }
+
     /// Arranca el motor si estaba parado. `start()` es idempotente.
     func syncNow() {
         guard let sync else { return }
         Task { try? await sync.start() }
+        // La sincronización trae elementos nuevos del Mac, y el widget no se
+        // entera solo. Es una petición, no una orden: WidgetKit decide cuándo.
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     private func startRetention(store: ClipboardStore) {
@@ -100,8 +133,15 @@ struct RootView: View {
     let environment: AppEnvironment
 
     var body: some View {
-        if let store = environment.store {
-            HistoryView(store: store, capture: environment.capture)
+        if let store = environment.store,
+           let history = environment.history,
+           let pinboards = environment.pinboards {
+            HistoryView(
+                store: store,
+                capture: environment.capture,
+                model: history,
+                pinboards: pinboards
+            )
         } else {
             ContentUnavailableView(
                 "No se pudo abrir el historial",

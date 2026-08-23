@@ -1,5 +1,6 @@
 import PasteCore
 import SwiftUI
+import WidgetKit
 
 /// Qué se va a guardar y dónde.
 struct ShareView: View {
@@ -97,6 +98,8 @@ struct ShareView: View {
                 isSaving = false
                 return
             }
+            // El widget no observa la base: hay que pedirle que se refresque.
+            WidgetCenter.shared.reloadAllTimelines()
             onFinish()
         } catch {
             self.error = error.localizedDescription

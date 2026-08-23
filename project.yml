@@ -50,13 +50,45 @@ targets:
       - path: PasteiOS
     dependencies:
       - package: PasteCore
-      # Embebida en la app: se instala y se firma con ella.
+      # Embebidas en la app: se instalan y se firman con ella.
       - target: PasteShareExtension
+      - target: PasteWidget
+      - target: PasteKeyboard
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.threedots.paste.ios
         INFOPLIST_FILE: PasteiOS/Info.plist
         CODE_SIGN_ENTITLEMENTS: PasteiOS/PasteiOS.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+
+  PasteWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: PasteWidget
+    dependencies:
+      - package: PasteCore
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.threedots.paste.ios.widget
+        INFOPLIST_FILE: PasteWidget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: PasteWidget/PasteWidget.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+
+  PasteKeyboard:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: PasteKeyboard
+    dependencies:
+      - package: PasteCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.threedots.paste.ios.keyboard
+        INFOPLIST_FILE: PasteKeyboard/Info.plist
+        CODE_SIGN_ENTITLEMENTS: PasteKeyboard/PasteKeyboard.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
 
   PasteShareExtension:

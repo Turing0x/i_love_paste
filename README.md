@@ -5,9 +5,12 @@ Gestor de portapapeles para macOS e iPhone. SwiftUI, sin dependencias de nube.
 ## Estructura
 
 ```
-PasteCore/   Swift Package: modelo, base de datos (GRDB + FTS5), sync (fase 2)
+PasteCore/   Swift Package: modelo, base de datos (GRDB + FTS5), sincronización
 PasteMac/    App de macOS
-PasteiOS/    App de iPhone (fase 2)
+PasteiOS/    App de iPhone
+PasteShareExtension/  Guardar desde la hoja de compartir
+PasteKeyboard/        Teclado con el historial
+PasteWidget/          Widget de pantalla de inicio
 project.yml  Fuente del .xcodeproj — el proyecto se genera, no se versiona
 docs/        Referencia funcional y capturas de la app original
 ```
@@ -59,7 +62,14 @@ cd PasteCore && swift test
   botón de pegar del sistema y por la Share Extension, y las dos puertas pasan
   por `SharedCapture`, así que comparten política con el capturador del Mac.
 - **La Share Extension no sincroniza**: escribe en local y la app sube lo
-  encolado al abrirse.
+  encolado al abrirse. Lo mismo vale para el teclado y el widget, que además
+  solo leen.
+- **El teclado exige «Permitir acceso completo»**: iOS prohíbe a un teclado leer
+  el contenedor compartido sin ese permiso, y no hay rodeo. Se activa a mano en
+  Ajustes y el teclado explica cómo cuando falta.
+- **El widget no observa la base.** WidgetKit no mantiene el proceso vivo, así
+  que la app y la extensión piden `reloadAllTimelines()` tras escribir. Es una
+  petición, no una orden: el widget puede ir por detrás y es normal.
 
 - **Para probar la sincronización con un solo Mac**, `PASTE_DB_PATH` mueve la
   base y las preferencias de una instancia, de modo que dos copias de la app se
@@ -70,8 +80,9 @@ cd PasteCore && swift test
 
 ## Estado
 
-Mac y iPhone funcionan y comparten historial por iCloud. Lo que queda del
-documento de referencia son las piezas accesorias de iOS.
+Mac y iPhone funcionan y comparten historial por iCloud. Todos los hitos
+planificados están cerrados; lo que queda está en «Aplazado», por decisión y no
+por olvido.
 
 - [x] **M0** — Estructura, esquema GRDB + FTS5, tests
 - [x] **M1** — Capturador de `NSPasteboard`, dedup, exclusiones, pausa, copiar al pulsar
@@ -80,7 +91,7 @@ documento de referencia son las piezas accesorias de iOS.
 - [x] **M4** — Pinboards: barra lateral, colores, drag & drop
 - [x] **M6** — Sincronización por CloudKit (`CKSyncEngine`, base privada, campos cifrados)
 - [x] **M7** — App de iPhone y Share Extension
-- [ ] **M8** — Teclado y widget de iPhone
+- [x] **M8** — Teclado y widget de iPhone
 
 ### Aplazado
 
