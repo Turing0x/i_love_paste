@@ -178,6 +178,24 @@ public struct ClipboardStore: Sendable {
         }
     }
 
+    /// Secuencia que emite el listado completo cada vez que cambia algo que le
+    /// afecta.
+    ///
+    /// Es lo que hace que la lista se actualice sola al copiar, sin que el
+    /// capturador tenga que avisar a la interfaz: GRDB observa las tablas
+    /// implicadas y vuelve a ejecutar la consulta.
+    public func observeItems(
+        matching filter: HistoryFilter = .history,
+        limit: Int = 200
+    ) -> AsyncValueObservation<[ClipboardItem]> {
+        ValueObservation
+            .tracking { db in
+                let request = Self.applyOrdering(Self.baseRequest(filter), scope: filter.scope)
+                return try request.limit(limit).fetchAll(db)
+            }
+            .values(in: db.reader)
+    }
+
     public func item(id: UUID) throws -> ClipboardItem? {
         try db.reader.read { db in
             try ClipboardItem.fetchOne(db, key: id.uuidString)
@@ -197,6 +215,25 @@ public struct ClipboardStore: Sendable {
                 ORDER BY count DESC
                 """)
             return rows.map { ($0["bundleID"], $0["name"], $0["count"]) }
+        }
+    }
+
+    // MARK: - Dispositivos
+
+    /// Inserta o actualiza el registro de un dispositivo.
+    ///
+    /// Se llama en cada arranque: el nombre del Mac cambia, y `lastSeenAt` es lo
+    /// que permitirá saber qué dispositivos siguen vivos cuando haya
+    /// sincronización.
+    public func registerDevice(_ device: Device) throws {
+        try db.writer.write { db in
+            try device.save(db)
+        }
+    }
+
+    public func devices() throws -> [Device] {
+        try db.reader.read { db in
+            try Device.fetchAll(db)
         }
     }
 

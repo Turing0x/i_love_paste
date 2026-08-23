@@ -5,16 +5,31 @@ import Foundation
 public enum ContentHasher {
     /// Huella de un texto.
     ///
-    /// Se normalizan los saltos de línea y se recortan los espacios de los
-    /// extremos, porque copiar el mismo fragmento desde dos apps distintas suele
-    /// diferir solo en eso y son, para el usuario, el mismo contenido. Lo que no
-    /// se toca son mayúsculas ni espacios interiores: en código sí importan.
+    /// Lo que no se toca son mayúsculas ni espacios interiores: en código sí
+    /// importan.
     public static func hash(text: String) -> String {
-        let normalized = text
+        digest(Data(normalize(text).utf8), prefix: "t")
+    }
+
+    /// Huella de un contenido con formato.
+    ///
+    /// Entra el RTF además del texto porque `ClipboardStore.capture` no
+    /// actualiza `richData` al deduplicar: si el hash ignorase el formato,
+    /// copiar el mismo texto con otro estilo ascendería el elemento viejo y
+    /// dejaría guardado un formato que ya no corresponde a lo que se copió.
+    public static func hash(richText text: String, rtf: Data) -> String {
+        var combined = Data(normalize(text).utf8)
+        combined.append(rtf)
+        return digest(combined, prefix: "r")
+    }
+
+    /// Unifica los saltos de línea y recorta los extremos: copiar el mismo
+    /// fragmento desde dos apps distintas suele diferir solo en eso.
+    private static func normalize(_ text: String) -> String {
+        text
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return digest(Data(normalized.utf8), prefix: "t")
     }
 
     /// Huella de un contenido binario (imagen o fichero).

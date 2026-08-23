@@ -1,3 +1,4 @@
+import AppKit
 import PasteCore
 import SwiftUI
 
@@ -7,70 +8,95 @@ struct PasteMacApp: App {
 
     var body: some Scene {
         WindowGroup {
-            HistoryDebugView(environment: environment)
+            HistoryView(environment: environment)
         }
+        .defaultSize(width: 560, height: 640)
     }
 }
 
 /// Dependencias de larga vida de la app.
 ///
-/// La base se abre una sola vez al arrancar; si falla, se guarda el error en vez
-/// de reventar, porque una app de portapapeles que no arranca es peor que una
-/// que arranca diciendo qué le pasa.
+/// Si la base no abre se guarda el error en vez de reventar: una app de
+/// portapapeles que no arranca es peor que una que arranca diciendo qué le pasa.
+@MainActor
 @Observable
 final class AppEnvironment {
     private(set) var store: ClipboardStore?
+    private(set) var watcher: PasteboardWatcher?
+    private(set) var writer: ClipboardWriter?
     private(set) var openError: String?
+
+    let icons = AppIconCache()
+
+    private let settingsStore = CaptureSettingsStore()
+    private var retentionTimer: Timer?
+
+    /// Historial conservado por defecto. Los elementos de un pinboard no caducan.
+    private static let retentionMaxAge: TimeInterval = 30 * 24 * 3600
+    private static let retentionMaxItems = 10_000
+
+    var isPaused: Bool {
+        get { watcher?.settings.isPaused ?? false }
+        set {
+            guard let watcher else { return }
+            watcher.settings.isPaused = newValue
+            settingsStore.save(watcher.settings)
+        }
+    }
 
     init() {
         do {
             let db = try AppDatabase.open(at: try AppPaths.databaseURL())
-            store = ClipboardStore(db)
+            let store = ClipboardStore(db)
+            self.store = store
+
+            let deviceID = settingsStore.deviceID()
+            try store.registerDevice(Device(
+                id: deviceID,
+                name: Host.current().localizedName ?? "Mac",
+                platform: .macOS
+            ))
+
+            let watcher = PasteboardWatcher(
+                store: store,
+                settings: settingsStore.load(),
+                deviceID: deviceID
+            )
+            watcher.start()
+            self.watcher = watcher
+            self.writer = ClipboardWriter(watcher: watcher)
+
+            startRetention(store: store)
         } catch {
             openError = String(describing: error)
         }
     }
-}
 
-/// Ventana provisional del hito M0: solo comprueba que la base abre, migra y
-/// consulta. La sustituye el panel real en M2.
-struct HistoryDebugView: View {
-    let environment: AppEnvironment
-    @State private var items: [ClipboardItem] = []
-    @State private var loadError: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Paste — M0")
-                .font(.headline)
-
-            if let error = environment.openError ?? loadError {
-                Text(error)
-                    .foregroundStyle(.red)
-                    .textSelection(.enabled)
-            } else if items.isEmpty {
-                Text("Base de datos abierta y migrada. Historial vacío: el capturador llega en M1.")
-                    .foregroundStyle(.secondary)
-            } else {
-                List(items) { item in
-                    VStack(alignment: .leading) {
-                        Text(item.displayTitle).lineLimit(1)
-                        Text(item.sourceAppName ?? "—")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
+    /// Poda el historial al arrancar y luego cada hora.
+    ///
+    /// Sin esto la base crece sin límite desde el primer día. Los ajustes
+    /// visibles llegan en M5; los valores por defecto se aplican ya.
+    private func startRetention(store: ClipboardStore) {
+        applyRetention(store: store)
+        let timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
+            MainActor.assumeIsolated { self.applyRetention(store: store) }
         }
-        .padding()
-        .frame(minWidth: 480, minHeight: 320)
-        .task {
-            guard let store = environment.store else { return }
-            do {
-                items = try store.items(limit: 100)
-            } catch {
-                loadError = String(describing: error)
-            }
+        timer.tolerance = 300
+        retentionTimer = timer
+    }
+
+    private func applyRetention(store: ClipboardStore) {
+        do {
+            try store.applyRetention(
+                maxAge: Self.retentionMaxAge,
+                maxItems: Self.retentionMaxItems
+            )
+            // Las lápidas se conservan un tiempo tras el borrado para que,
+            // cuando exista sincronización, el otro dispositivo se entere del
+            // borrado antes de que la fila desaparezca.
+            _ = try store.purgeTombstones(olderThan: Date().addingTimeInterval(-Self.retentionMaxAge))
+        } catch {
+            NSLog("Paste: falló la retención: \(error)")
         }
     }
 }

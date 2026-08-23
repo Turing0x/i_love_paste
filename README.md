@@ -38,12 +38,15 @@ cd PasteCore && swift test
   ni Direct Paste. Renuncia deliberada a la Mac App Store.
 - **Los blobs viven en disco**, no en la base: una captura de pantalla pesa
   megabytes y lastraría cualquier consulta del historial.
+- **La política de captura vive en `PasteCore`, no en la app**: `CaptureEngine`
+  recibe una `PasteboardSnapshot` ya extraída, así que se prueba entera sin
+  portapapeles real y la reutilizará la app de iPhone.
 
 ## Estado
 
 - [x] **M0** — Estructura, esquema GRDB + FTS5, tests
-- [ ] **M1** — Capturador de `NSPasteboard`, dedup, exclusiones, pausa
-- [ ] **M2** — Panel `NSPanel` no-activante, hotkey, búsqueda, filtros
+- [x] **M1** — Capturador de `NSPasteboard`, dedup, exclusiones, pausa, copiar al pulsar
+- [ ] **M2** — Imágenes y ficheros, panel `NSPanel` no-activante, hotkey, búsqueda, filtros
 - [ ] **M3** — Direct Paste (Accesibilidad), Quick Paste ⌘1–9
 - [ ] **M4** — Pinboards
 - [ ] **M5** — Ajustes, retención, edición

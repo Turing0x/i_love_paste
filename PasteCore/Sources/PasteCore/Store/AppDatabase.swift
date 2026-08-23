@@ -39,13 +39,11 @@ public struct AppDatabase: Sendable {
 
 extension AppDatabase {
     static var migrator: DatabaseMigrator {
+        // Sin `eraseDatabaseOnSchemaChange`: a partir de M1 la base contiene el
+        // historial real del usuario, y reconstruirla en silencio al tocar una
+        // migración lo borraría entero. Los cambios de esquema van en
+        // migraciones nuevas.
         var migrator = DatabaseMigrator()
-
-        // Durante el desarrollo, cambiar una migración ya aplicada borra la base
-        // y la reconstruye en vez de fallar. Quitar antes de usar en serio.
-        #if DEBUG
-        migrator.eraseDatabaseOnSchemaChange = true
-        #endif
 
         migrator.registerMigration("v1.schema") { db in
             try db.create(table: "device") { t in

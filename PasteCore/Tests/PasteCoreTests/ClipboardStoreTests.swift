@@ -413,3 +413,32 @@ private func textItem(
     #expect(fecha == fechaDespues)
     try #expect(store.data(at: ruta) == datos)
 }
+
+// MARK: - Dispositivos
+
+@Test func registrarElMismoDispositivoDosVecesNoDuplica() throws {
+    let store = try makeStore()
+    let id = UUID()
+    try store.registerDevice(Device(id: id, name: "MacBook", platform: .macOS))
+    try store.registerDevice(Device(id: id, name: "MacBook de Raúl", platform: .macOS))
+
+    let devices = try store.devices()
+    #expect(devices.count == 1)
+    #expect(devices[0].name == "MacBook de Raúl")
+}
+
+// MARK: - Observación en vivo
+
+@Test func laObservacionEmiteAlCapturar() async throws {
+    let store = try makeStore()
+    var iterator = store.observeItems().makeAsyncIterator()
+
+    // La primera emisión es el estado actual: vacío.
+    let inicial = try await iterator.next()
+    #expect(inicial?.isEmpty == true)
+
+    try store.capture(textItem("recién copiado"))
+
+    let despues = try await iterator.next()
+    #expect(despues?.map(\.plainText) == ["recién copiado"])
+}
