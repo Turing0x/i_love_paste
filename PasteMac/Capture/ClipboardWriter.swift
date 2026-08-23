@@ -14,15 +14,18 @@ struct ClipboardWriter {
         self.watcher = watcher
     }
 
-    func write(_ item: ClipboardItem) {
+    /// Con `asPlainText` se escribe solo la cadena, sin RTF ni tipo de enlace:
+    /// es lo que hace que Word, Mail o una web pegadas en otro documento no
+    /// arrastren su fuente, su tamaño y su color (§18).
+    func write(_ item: ClipboardItem, asPlainText: Bool = false) {
         pasteboard.clearContents()
 
-        if item.kind == .richText, let rtf = item.richData {
+        if !asPlainText, item.kind == .richText, let rtf = item.richData {
             pasteboard.setData(rtf, forType: .rtf)
         }
         if let text = item.plainText {
             pasteboard.setString(text, forType: .string)
-            if item.kind == .url {
+            if item.kind == .url, !asPlainText {
                 // Declarar el tipo hace que quien pegue reciba un enlace y no
                 // una cadena que parece uno.
                 pasteboard.setString(text, forType: .URL)

@@ -21,6 +21,19 @@ struct PasteMacApp: App {
                 set: { environment.isPaused = $0 }
             ))
 
+            Toggle("Pegar siempre como texto plano", isOn: Binding(
+                get: { environment.alwaysPlainText },
+                set: { environment.alwaysPlainText = $0 }
+            ))
+
+            // El menú se reconstruye cada vez que se abre, así que basta con
+            // leer el permiso aquí para que la opción desaparezca sola en
+            // cuanto se conceda desde Ajustes.
+            if !environment.isAccessibilityTrusted {
+                Divider()
+                Button("Activar Direct Paste…") { environment.requestAccessibility() }
+            }
+
             if let error = environment.openError {
                 Divider()
                 Text(error).font(.caption)
@@ -50,6 +63,8 @@ final class AppEnvironment {
     let panel = PanelController()
 
     private let settingsStore = CaptureSettingsStore()
+    private let pasteSettings = PasteSettingsStore()
+    private let paster = DirectPaster()
     private let hotKeys = HotKeyCenter()
     private var retentionTimer: Timer?
 
@@ -64,6 +79,39 @@ final class AppEnvironment {
             watcher.settings.isPaused = newValue
             settingsStore.save(watcher.settings)
         }
+    }
+
+    var alwaysPlainText: Bool {
+        get { pasteSettings.alwaysPlainText }
+        set { pasteSettings.alwaysPlainText = newValue }
+    }
+
+    /// No se guarda en una propiedad: el permiso se concede y se retira desde
+    /// Ajustes sin avisar a la app.
+    var isAccessibilityTrusted: Bool { AccessibilityAuthorization.isTrusted }
+
+    func requestAccessibility() {
+        // La alerta del sistema solo aparece la primera vez; después hay que
+        // llevar al usuario al panel a mano o se queda sin camino.
+        if !AccessibilityAuthorization.request() {
+            AccessibilityAuthorization.openSettings()
+        }
+    }
+
+    /// Usa un elemento: lo deja en el portapapeles, cierra el panel y lo pega en
+    /// la app de destino.
+    ///
+    /// Si no hay permiso de Accesibilidad el pegado no ocurre y el contenido se
+    /// queda en el portapapeles para pegarlo a mano (§17).
+    func use(_ item: ClipboardItem, asPlainText forcePlainText: Bool = false) {
+        // El destino se lee antes de esconder el panel: `hide()` no lo borra,
+        // pero la siguiente apertura sí, y el pegado es asíncrono.
+        let target = panel.targetApplication
+
+        writer?.write(item, asPlainText: forcePlainText || alwaysPlainText)
+        panel.hide()
+
+        Task { await paster.paste(into: target) }
     }
 
     init() {

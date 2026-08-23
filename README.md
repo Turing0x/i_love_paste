@@ -52,7 +52,7 @@ cd PasteCore && swift test
 - [x] **M0** — Estructura, esquema GRDB + FTS5, tests
 - [x] **M1** — Capturador de `NSPasteboard`, dedup, exclusiones, pausa, copiar al pulsar
 - [x] **M2** — Panel flotante ⌥⌘V, búsqueda en vivo, filtros, Quick Paste ⌘1–9
-- [ ] **M2b** — Imágenes y ficheros
-- [ ] **M3** — Direct Paste (Accesibilidad)
+- [ ] **M2b** — Imágenes y ficheros (aplazado)
+- [x] **M3** — Direct Paste (Accesibilidad), pegar como texto plano
 - [ ] **M4** — Pinboards
 - [ ] **M5** — Ajustes, retención, edición

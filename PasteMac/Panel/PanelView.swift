@@ -34,14 +34,18 @@ struct PanelView: View {
         // que conserva el foco todo el rato, no se quede con las flechas.
         .onKeyPress(.upArrow) { model.moveSelection(by: -1); return .handled }
         .onKeyPress(.downArrow) { model.moveSelection(by: 1); return .handled }
-        .onKeyPress(.return) { activateSelection(); return .handled }
+        // ⇧↩ pega el elemento seleccionado sin formato (§18, modo individual).
+        .onKeyPress(keys: [.return]) { press in
+            activateSelection(asPlainText: press.modifiers.contains(.shift))
+            return .handled
+        }
         .onKeyPress(.escape) { environment.panel.hide(); return .handled }
         .onKeyPress(characters: .decimalDigits) { press in
             guard press.modifiers.contains(.command),
                   let number = Int(press.characters), number > 0,
                   let item = model.item(atQuickPasteNumber: number)
             else { return .ignored }
-            use(item)
+            use(item, asPlainText: press.modifiers.contains(.shift))
             return .handled
         }
     }
@@ -117,7 +121,10 @@ struct PanelView: View {
                         .id(item.id)
                         .onTapGesture { use(item) }
                         .contextMenu {
-                            Button("Copiar") { use(item) }
+                            Button("Pegar") { use(item) }
+                            Button("Pegar como texto plano") {
+                                use(item, asPlainText: true)
+                            }
                             Divider()
                             Button("Borrar", role: .destructive) {
                                 try? environment.store?.softDelete(id: item.id)
@@ -150,15 +157,14 @@ struct PanelView: View {
         }
     }
 
-    private func activateSelection() {
+    private func activateSelection(asPlainText: Bool = false) {
         guard let item = model.selectedItem else { return }
-        use(item)
+        use(item, asPlainText: asPlainText)
     }
 
-    /// Copia el elemento y cierra el panel. En M3 esto pasará a pegar
-    /// directamente en la app de destino.
-    private func use(_ item: ClipboardItem) {
-        environment.writer?.write(item)
-        environment.panel.hide()
+    /// Deja el elemento en el portapapeles, cierra el panel y lo pega en la app
+    /// que estaba delante. Sin permiso de Accesibilidad solo copia.
+    private func use(_ item: ClipboardItem, asPlainText: Bool = false) {
+        environment.use(item, asPlainText: asPlainText)
     }
 }
