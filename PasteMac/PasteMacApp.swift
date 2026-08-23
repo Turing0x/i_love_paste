@@ -27,6 +27,14 @@ struct PasteMacApp: App {
                 set: { environment.alwaysPlainText = $0 }
             ))
 
+            // El estado se lee del sistema en cada apertura del menú, no de una
+            // preferencia propia: el usuario puede desactivarlo desde Ajustes >
+            // Elementos de inicio y la app no se entera.
+            Toggle("Abrir al iniciar sesión", isOn: Binding(
+                get: { environment.opensAtLogin },
+                set: { environment.opensAtLogin = $0 }
+            ))
+
             Divider()
 
             Toggle("Sincronizar con iCloud", isOn: Binding(
@@ -103,6 +111,11 @@ final class AppEnvironment {
     var alwaysPlainText: Bool {
         get { pasteSettings.alwaysPlainText }
         set { pasteSettings.alwaysPlainText = newValue }
+    }
+
+    var opensAtLogin: Bool {
+        get { LoginItem.isEnabled }
+        set { LoginItem.setEnabled(newValue) }
     }
 
     private(set) var syncStatusText = "Sincronización detenida"

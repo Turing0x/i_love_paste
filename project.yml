@@ -60,6 +60,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.threedots.paste.mac
         INFOPLIST_FILE: PasteMac/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: PasteMac/PasteMac.entitlements
         ENABLE_HARDENED_RUNTIME: YES
         # Sin sandbox a propósito: con él no hay permiso de Accesibilidad, ni
@@ -82,6 +83,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.threedots.paste.ios
         INFOPLIST_FILE: PasteiOS/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: PasteiOS/PasteiOS.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
 
