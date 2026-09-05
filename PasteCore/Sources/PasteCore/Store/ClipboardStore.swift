@@ -232,15 +232,6 @@ public struct ClipboardStore: Sendable {
 
     // MARK: - Pinboards
 
-    /// Un pinboard por su identificador, vivo o no.
-    ///
-    /// Devuelve también los borrados: al subir hace falta poder mandar la lápida.
-    public func pinboard(id: UUID) throws -> Pinboard? {
-        try db.reader.read { db in
-            try Pinboard.fetchOne(db, key: id.uuidString)
-        }
-    }
-
     /// Inserta o actualiza un pinboard.
     public func save(_ pinboard: Pinboard) throws {
         try db.writer.write { db in
@@ -269,6 +260,15 @@ public struct ClipboardStore: Sendable {
             )
             try pinboard.insert(db)
             return pinboard
+        }
+    }
+
+    /// Un pinboard por su identificador, vivo o no.
+    ///
+    /// Devuelve también los borrados: al subir hace falta poder mandar la lápida.
+    public func pinboard(id: UUID) throws -> Pinboard? {
+        try db.reader.read { db in
+            try Pinboard.fetchOne(db, key: id.uuidString)
         }
     }
 
@@ -584,14 +584,20 @@ public struct ClipboardStore: Sendable {
     /// Nunca toca los elementos que están en un pinboard: la razón de existir de
     /// un pinboard es precisamente que su contenido no caduca.
     ///
+    /// Es asíncrona a propósito y no tiene versión síncrona: la poda recorre el
+    /// historial entero y la llaman las dos apps desde el actor principal. Con
+    /// una firma que se pudiera llamar sin esperar, volvería a acabar donde
+    /// estaba —bloqueando el pintado— la primera vez que alguien la copiase de
+    /// otro sitio.
+    ///
     /// - Returns: cuántos elementos se marcaron.
     @discardableResult
     public func applyRetention(
         maxAge: TimeInterval?,
         maxItems: Int?,
         now: Date = Date()
-    ) throws -> Int {
-        try db.writer.write { db in
+    ) async throws -> Int {
+        try await db.writer.write { db in
             var purged = 0
 
             if let maxAge {
@@ -607,22 +613,26 @@ public struct ClipboardStore: Sendable {
             }
 
             if let maxItems {
-                let survivors = try ClipboardItem
-                    .select(ClipboardItem.Columns.id, as: String.self)
-                    .filter(ClipboardItem.Columns.deletedAt == nil)
-                    .filter(ClipboardItem.Columns.pinboardID == nil)
-                    .order(ClipboardItem.Columns.createdAt.desc)
-                    .limit(maxItems)
-                    .fetchAll(db)
-
-                purged += try ClipboardItem
-                    .filter(ClipboardItem.Columns.deletedAt == nil)
-                    .filter(ClipboardItem.Columns.pinboardID == nil)
-                    .filter(!survivors.contains(ClipboardItem.Columns.id))
-                    .updateAll(db, [
-                        ClipboardItem.Columns.deletedAt.set(to: now),
-                        ClipboardItem.Columns.updatedAt.set(to: now)
-                    ])
+                // La lista de supervivientes se queda dentro de SQLite. Antes se
+                // traía a Swift y volvía como un `NOT IN (…)` de hasta diez mil
+                // parámetros: el tope de retención marcaba el tamaño de la
+                // consulta, que es justo al revés de como debería ser.
+                try db.execute(
+                    sql: """
+                        UPDATE clipboardItem
+                        SET deletedAt = ?, updatedAt = ?
+                        WHERE deletedAt IS NULL
+                          AND pinboardID IS NULL
+                          AND id NOT IN (
+                              SELECT id FROM clipboardItem
+                              WHERE deletedAt IS NULL AND pinboardID IS NULL
+                              ORDER BY createdAt DESC
+                              LIMIT ?
+                          )
+                        """,
+                    arguments: [now, now, maxItems]
+                )
+                purged += db.changesCount
             }
 
             return purged
@@ -655,8 +665,8 @@ public struct ClipboardStore: Sendable {
     ///
     /// Se espera antes de purgar para que un borrado hecho en un dispositivo
     /// tenga tiempo de propagarse al otro cuando exista sincronización.
-    public func purgeTombstones(olderThan cutoff: Date) throws -> [String] {
-        try db.writer.write { db in
+    public func purgeTombstones(olderThan cutoff: Date) async throws -> [String] {
+        try await db.writer.write { db in
             let doomed = try ClipboardItem
                 .filter(ClipboardItem.Columns.deletedAt != nil)
                 .filter(ClipboardItem.Columns.deletedAt < cutoff)

@@ -4,6 +4,11 @@ import SwiftUI
 /// Contenido del teclado: pestañas de ámbito y lista de elementos.
 struct KeyboardView: View {
     let hasFullAccess: Bool
+
+    /// La base la abre el controlador, una vez. Aquí solo se lee: recrearla en
+    /// cada cambio de pestaña era el error que había.
+    let store: ClipboardStore?
+
     let needsGlobe: Bool
     let onInsert: (String) -> Void
     let onNextKeyboard: () -> Void
@@ -137,9 +142,11 @@ struct KeyboardView: View {
     /// va. Mantener una observación viva costaría más de lo que ahorra.
     private func load() {
         guard hasFullAccess else { return }
+        guard let store else {
+            error = "Sin acceso al historial"
+            return
+        }
         do {
-            let url = try AppPaths.databaseURL(appGroup: AppPaths.sharedGroupIdentifier)
-            let store = ClipboardStore(try AppDatabase.open(at: url))
             if pinboards.isEmpty {
                 pinboards = try store.pinboards()
             }

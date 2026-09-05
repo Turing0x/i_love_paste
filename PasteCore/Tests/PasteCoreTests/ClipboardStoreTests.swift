@@ -420,7 +420,7 @@ private func textItem(
 
 // MARK: - Retención
 
-@Test func laRetencionPorAntiguedadNoTocaLosPinboards() throws {
+@Test func laRetencionPorAntiguedadNoTocaLosPinboards() async throws {
     let store = try makeStore()
     let ahora = Date(timeIntervalSince1970: 100_000)
     let viejo = Date(timeIntervalSince1970: 1000)
@@ -431,7 +431,7 @@ private func textItem(
     try store.save(board)
     try store.move(id: guardado.id, toPinboard: board.id)
 
-    let purgados = try store.applyRetention(maxAge: 3600, maxItems: nil, now: ahora)
+    let purgados = try await store.applyRetention(maxAge: 3600, maxItems: nil, now: ahora)
 
     #expect(purgados == 1)
     try #expect(store.item(id: suelto.id)?.deletedAt != nil)
@@ -439,13 +439,13 @@ private func textItem(
     try #expect(store.item(id: guardado.id)?.deletedAt == nil)
 }
 
-@Test func laRetencionPorCantidadConservaLosMasRecientes() throws {
+@Test func laRetencionPorCantidadConservaLosMasRecientes() async throws {
     let store = try makeStore()
     for i in 0..<5 {
         try store.capture(textItem("item \(i)", at: Date(timeIntervalSince1970: Double(i) * 1000)))
     }
 
-    try store.applyRetention(maxAge: nil, maxItems: 2)
+    try await store.applyRetention(maxAge: nil, maxItems: 2)
 
     let quedan = try store.items(limit: 10)
     #expect(quedan.map(\.plainText) == ["item 4", "item 3"])
@@ -482,7 +482,7 @@ private func textItem(
     #expect(pendientes.contains { $0.recordName == item.id.uuidString })
 }
 
-@Test func purgarLapidasDevuelveLosBlobsHuerfanos() throws {
+@Test func purgarLapidasDevuelveLosBlobsHuerfanos() async throws {
     let store = try makeStore()
     let item = ClipboardItem(
         contentHash: ContentHasher.hash(data: Data([1, 2, 3])),
@@ -493,13 +493,13 @@ private func textItem(
     try store.capture(item)
     try store.softDelete(id: item.id, at: Date(timeIntervalSince1970: 1000))
 
-    let huerfanos = try store.purgeTombstones(olderThan: Date(timeIntervalSince1970: 5000))
+    let huerfanos = try await store.purgeTombstones(olderThan: Date(timeIntervalSince1970: 5000))
 
     #expect(huerfanos == ["ab/cdef"])
     try #expect(store.item(id: item.id) == nil)
 }
 
-@Test func purgarLapidasNoBorraBlobsQueSiguenEnUso() throws {
+@Test func purgarLapidasNoBorraBlobsQueSiguenEnUso() async throws {
     let store = try makeStore()
     let hash = ContentHasher.hash(data: Data([1, 2, 3]))
 
@@ -519,7 +519,7 @@ private func textItem(
     try store.capture(muerto)
     try store.softDelete(id: muerto.id, at: Date(timeIntervalSince1970: 1000))
 
-    let huerfanos = try store.purgeTombstones(olderThan: Date(timeIntervalSince1970: 5000))
+    let huerfanos = try await store.purgeTombstones(olderThan: Date(timeIntervalSince1970: 5000))
 
     // El blob lo sigue referenciando `vivo`: borrarlo dejaría un elemento roto.
     #expect(huerfanos.isEmpty)

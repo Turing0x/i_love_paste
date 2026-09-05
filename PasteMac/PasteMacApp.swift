@@ -263,25 +263,38 @@ final class AppEnvironment {
     /// visibles llegan en M5; los valores por defecto se aplican ya.
     private func startRetention(store: ClipboardStore) {
         applyRetention(store: store)
-        let timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
-            MainActor.assumeIsolated { self.applyRetention(store: store) }
+        // `[weak self]`: el temporizador retiene su cierre, el cierre retendría
+        // al entorno y el entorno retiene al temporizador. El ciclo no se nota
+        // en un objeto que vive lo que la app, pero el vigilante del
+        // portapapeles ya lo evita y tener dos patrones distintos para lo mismo
+        // acaba con alguien copiando el equivocado.
+        let timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applyRetention(store: store) }
         }
         timer.tolerance = 300
         retentionTimer = timer
     }
 
+    /// Lanza la poda sin esperarla.
+    ///
+    /// La escritura ocurre dentro de `ClipboardStore`, fuera del actor
+    /// principal: recorre el historial entero y hacerlo aquí congelaba el
+    /// pintado una vez por hora, y otra en el arranque.
     private func applyRetention(store: ClipboardStore) {
-        do {
-            try store.applyRetention(
-                maxAge: Self.retentionMaxAge,
-                maxItems: Self.retentionMaxItems
-            )
-            // Las lápidas se conservan un tiempo tras el borrado para que,
-            // cuando exista sincronización, el otro dispositivo se entere del
-            // borrado antes de que la fila desaparezca.
-            _ = try store.purgeTombstones(olderThan: Date().addingTimeInterval(-Self.retentionMaxAge))
-        } catch {
-            NSLog("Paste: falló la retención: \(error)")
+        Task {
+            do {
+                try await store.applyRetention(
+                    maxAge: Self.retentionMaxAge,
+                    maxItems: Self.retentionMaxItems
+                )
+                // Las lápidas se conservan un tiempo tras el borrado para que el
+                // otro dispositivo se entere antes de que la fila desaparezca.
+                _ = try await store.purgeTombstones(
+                    olderThan: Date().addingTimeInterval(-Self.retentionMaxAge)
+                )
+            } catch {
+                NSLog("Paste: falló la retención: \(error)")
+            }
         }
     }
 }

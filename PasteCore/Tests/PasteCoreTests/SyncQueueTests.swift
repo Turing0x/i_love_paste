@@ -119,14 +119,14 @@ private func textItem(_ text: String, at date: Date = Date()) -> ClipboardItem {
     #expect(try store.item(id: remoto.id) != nil)
 }
 
-@Test func purgarLapidasNoEncolaBorradosFisicos() throws {
+@Test func purgarLapidasNoEncolaBorradosFisicos() async throws {
     let store = try makeStore()
     let viejo = Date(timeIntervalSince1970: 1000)
     let item = try store.capture(textItem("efímero", at: viejo))
     try store.softDelete(id: item.id, at: viejo)
     try store.clearPending(recordNames: [item.id.uuidString])
 
-    _ = try store.purgeTombstones(olderThan: Date(timeIntervalSince1970: 100_000))
+    _ = try await store.purgeTombstones(olderThan: Date(timeIntervalSince1970: 100_000))
 
     // La lápida ya viajó cuando se purga: encolar el borrado físico haría subir
     // un registro que el servidor ya no tiene por qué volver a ver.

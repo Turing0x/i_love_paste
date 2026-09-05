@@ -16,6 +16,7 @@ final class KeyboardViewController: UIInputViewController {
             // no hay historial que enseñar, y el aviso es lo único que se puede
             // ofrecer.
             hasFullAccess: hasFullAccess,
+            store: Self.openStore(hasFullAccess: hasFullAccess),
             needsGlobe: needsInputModeSwitchKey,
             onInsert: { [weak self] text in
                 // Esto es "pegar" en un teclado: se escribe en el campo de la
@@ -38,6 +39,27 @@ final class KeyboardViewController: UIInputViewController {
             host.view.trailingAnchor.constraint(equalTo: self.view.trailingAnchor)
         ])
         host.didMove(toParent: self)
+    }
+
+    /// Abre la base compartida **una sola vez**, en el arranque del teclado.
+    ///
+    /// Antes la abría la vista en cada cambio de pestaña: un `DatabasePool`
+    /// nuevo, con su migrador, por cada toque. Un teclado tiene el techo de
+    /// memoria más bajo de todas las extensiones de iOS y vive unos segundos;
+    /// es el último sitio donde conviene abrir conexiones a la ligera.
+    ///
+    /// Sin acceso completo no se intenta siquiera: el sistema no deja llegar al
+    /// contenedor compartido y el único resultado sería un error que ya está
+    /// explicado en pantalla.
+    private static func openStore(hasFullAccess: Bool) -> ClipboardStore? {
+        guard hasFullAccess else { return nil }
+        do {
+            let url = try AppPaths.databaseURL(appGroup: AppPaths.sharedGroupIdentifier)
+            return ClipboardStore(try AppDatabase.open(at: url))
+        } catch {
+            NSLog("Paste: el teclado no pudo abrir el historial: \(error)")
+            return nil
+        }
     }
 
     override func updateViewConstraints() {

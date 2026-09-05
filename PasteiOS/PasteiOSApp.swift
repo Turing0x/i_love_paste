@@ -129,24 +129,30 @@ final class AppEnvironment {
 
     private func startRetention(store: ClipboardStore) {
         applyRetention(store: store)
-        let timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { _ in
-            MainActor.assumeIsolated { self.applyRetention(store: store) }
+        // Mismo `[weak self]` y mismo motivo que en el Mac: el temporizador y el
+        // entorno se retienen mutuamente si el cierre captura fuerte.
+        let timer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.applyRetention(store: store) }
         }
         timer.tolerance = 300
         retentionTimer = timer
     }
 
+    /// Lanza la poda sin esperarla: la escritura sale del actor principal por su
+    /// cuenta, y aquí lo que importa es no bloquear la primera pantalla.
     private func applyRetention(store: ClipboardStore) {
-        do {
-            try store.applyRetention(
-                maxAge: Self.retentionMaxAge,
-                maxItems: Self.retentionMaxItems
-            )
-            _ = try store.purgeTombstones(
-                olderThan: Date().addingTimeInterval(-Self.retentionMaxAge)
-            )
-        } catch {
-            NSLog("Paste: falló la retención: \(error)")
+        Task {
+            do {
+                try await store.applyRetention(
+                    maxAge: Self.retentionMaxAge,
+                    maxItems: Self.retentionMaxItems
+                )
+                _ = try await store.purgeTombstones(
+                    olderThan: Date().addingTimeInterval(-Self.retentionMaxAge)
+                )
+            } catch {
+                NSLog("Paste: falló la retención: \(error)")
+            }
         }
     }
 }
