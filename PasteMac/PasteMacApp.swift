@@ -90,6 +90,9 @@ final class AppEnvironment {
     // usa el suyo para no compartir `deviceID` con la principal.
     private let settingsStore = CaptureSettingsStore(defaults: .pasteInstance)
     private let pasteSettings = PasteSettingsStore()
+    // Mismo dominio que `settingsStore`: la instancia de depuración no debe
+    // compartir "última posición" con la principal.
+    private let lastScope = LastScopeStore(defaults: .pasteInstance)
     private var sync: CloudSyncEngine?
     private let paster = DirectPaster()
     private let hotKeys = HotKeyCenter()
@@ -193,6 +196,12 @@ final class AppEnvironment {
         // en cada `show` volvería a consultar la base y haría parpadear la lista.
         let model = HistoryListViewModel(store: store)
         let pinboards = PinboardListViewModel(store: store)
+
+        // Se carga una sola vez al arrancar; el guardado sigue enganchado
+        // mientras el modelo viva, que es toda la sesión de la app.
+        model.scope = lastScope.load()
+        model.onScopeChange = { [lastScope] scope in lastScope.save(scope) }
+
         panel.configure { [weak self] in
             guard let self else { return AnyView(EmptyView()) }
             return AnyView(PanelView(environment: self, model: model, pinboards: pinboards))

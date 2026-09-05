@@ -36,9 +36,10 @@ struct PanelView: View {
         }
         .background(.regularMaterial)
         .onAppear {
-            // El modelo sobrevive entre aperturas, así que hay que limpiarlo a
-            // mano: el panel se abre muchas veces al día y encontrarse la
-            // búsqueda de la vez anterior desconcierta.
+            // El modelo sobrevive entre aperturas, así que hay que limpiar la
+            // búsqueda y los filtros a mano: el panel se abre muchas veces al
+            // día y encontrarse los de la vez anterior desconcierta. El
+            // ámbito no se toca — ese es justo el que se quiere recordar.
             model.reset()
             model.start()
             pinboards.start()

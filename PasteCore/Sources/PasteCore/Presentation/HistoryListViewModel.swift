@@ -8,7 +8,17 @@ public final class HistoryListViewModel {
     private let store: ClipboardStore
 
     /// Ámbito visible: el historial suelto, un pinboard, o todo junto.
-    public var scope: HistoryFilter.Scope = .history { didSet { restartIfNeeded(oldValue) } }
+    public var scope: HistoryFilter.Scope = .history {
+        didSet {
+            restartIfNeeded(oldValue)
+            onScopeChange?(scope)
+        }
+    }
+
+    /// Avisa de cualquier cambio de ámbito, venga de donde venga (tocar un
+    /// pinboard, un deep link del widget…), para que quien lo escuche pueda
+    /// persistirlo como "última posición abierta".
+    public var onScopeChange: ((HistoryFilter.Scope) -> Void)?
     public var query: String = "" { didSet { restartIfNeeded(oldValue) } }
     public var kinds: Set<ContentKind> = [] { didSet { restartIfNeeded(oldValue) } }
     public var bundleID: String? { didSet { restartIfNeeded(oldValue) } }
@@ -54,8 +64,11 @@ public final class HistoryListViewModel {
 
     /// Deja la búsqueda como estaba al abrir: el panel se usa muchas veces al
     /// día y arrastrar el filtro de la vez anterior sorprende.
+    ///
+    /// El ámbito (`scope`) no se toca aquí: quién lo restaura es cosa de la
+    /// persistencia de "última posición abierta" de cada plataforma, no de un
+    /// reseteo genérico.
     public func reset() {
-        scope = .history
         query = ""
         kinds = []
         bundleID = nil

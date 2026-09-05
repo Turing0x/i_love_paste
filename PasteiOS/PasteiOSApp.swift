@@ -42,6 +42,12 @@ final class AppEnvironment {
     private var sync: CloudSyncEngine?
     private var retentionTimer: Timer?
 
+    /// Mismo grupo compartido que `SharedCapture`: es el sitio donde ya vive
+    /// el resto de estado de la app, no algo que se busque ni sincronice.
+    private let lastScope = LastScopeStore(
+        defaults: UserDefaults(suiteName: AppPaths.sharedGroupIdentifier) ?? .standard
+    )
+
     /// Para que el botón de la barra pueda enseñar que está trabajando.
     private(set) var isSyncing = false
 
@@ -68,6 +74,11 @@ final class AppEnvironment {
 
             history = HistoryListViewModel(store: store)
             pinboards = PinboardListViewModel(store: store)
+
+            // Cargar antes de enganchar el aviso: si no, el propio arranque
+            // reescribiría en el acto el valor que se acaba de leer.
+            history?.scope = lastScope.load()
+            history?.onScopeChange = { [lastScope] scope in lastScope.save(scope) }
 
             let sync = CloudSyncEngine(store: store)
             self.sync = sync

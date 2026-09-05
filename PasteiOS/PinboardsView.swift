@@ -34,6 +34,7 @@ struct PinboardsView: View {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("Nuevo", systemImage: "plus") { startCreate() }
                     }
+                    ToolbarItem(placement: .topBarLeading) { EditButton() }
                     ToolbarItem(placement: .topBarTrailing) {
                         Button("Listo") { dismiss() }
                     }
@@ -74,6 +75,7 @@ struct PinboardsView: View {
                     }
                     .contextMenu { menu(for: board) }
             }
+            .onMove(perform: movePinboards)
 
             // El view model se traga los fallos de escritura; aquí es donde se
             // ven, en vez de dejar que un borrado que no ocurrió parezca que sí.
@@ -165,6 +167,13 @@ struct PinboardsView: View {
         // `rename` ya descarta el nombre vacío y el que no cambia.
         model.rename(board, to: draftName)
         renaming = nil
+    }
+
+    /// Puente entre el índice que da `List` al arrastrar y el orden fraccional
+    /// que entiende el view model.
+    private func movePinboards(from offsets: IndexSet, to destination: Int) {
+        guard let source = offsets.first else { return }
+        model.move(model.pinboards[source], before: destination)
     }
 
     private func commitDelete() {

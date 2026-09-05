@@ -43,6 +43,11 @@ struct HistoryView: View {
                 // la misma función de cambiar de ámbito.
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) { scopeMenu }
+                    // Solo dentro de un pinboard el orden es del usuario; en el
+                    // historial no hay nada que reordenar (§104-108 del modelo).
+                    if model.allowsManualOrder {
+                        ToolbarItem(placement: .topBarLeading) { EditButton() }
+                    }
                     ToolbarItem(placement: .topBarTrailing) { syncButton }
                     ToolbarItem(placement: .topBarTrailing) { PasteButton(onCapture: capture) }
                 }
@@ -108,6 +113,9 @@ struct HistoryView: View {
                 }
                 .contextMenu { menu(for: item) }
             }
+            // `nil` esconde el asa de arrastre: en historial el orden lo pone
+            // la fecha, no el dedo.
+            .onMove(perform: model.allowsManualOrder ? { self.moveItems(from: $0, to: $1) } : nil)
         }
         .listStyle(.plain)
         .overlay {
@@ -277,6 +285,13 @@ struct HistoryView: View {
     private func move(_ item: ClipboardItem, to pinboardID: UUID?) {
         try? store.move(id: item.id, toPinboard: pinboardID)
         WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    /// Puente entre el índice que da `List` al arrastrar y el orden fraccional
+    /// que entiende el view model.
+    private func moveItems(from offsets: IndexSet, to destination: Int) {
+        guard let source = offsets.first else { return }
+        model.move(model.items[source], before: destination)
     }
 
     /// Vacía el historial suelto. Los pinboards no se tocan: son justamente lo
