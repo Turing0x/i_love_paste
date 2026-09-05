@@ -92,18 +92,16 @@ public final class PinboardListViewModel {
         perform { try store.deletePinboard(id: pinboard.id) }
     }
 
-    /// Recoloca un pinboard delante del que ocupa `index`, o al final con `nil`.
+    /// Recoloca un pinboard delante del que ocupa `index` **en la lista
+    /// visible**, o al final con `nil`.
     public func move(_ pinboard: Pinboard, before index: Int?) {
-        // El propio elemento arrastrado no cuenta como vecino: si lo fuera,
-        // soltarlo sobre sí mismo lo mandaría a un hueco que no existe.
-        let others = pinboards.filter { $0.id != pinboard.id }
-        let target = index.map { min($0, others.count) } ?? others.count
+        let rows = pinboards.map { (id: $0.id, sortOrder: $0.sortOrder) }
+        guard let spot = ReorderPlan.neighbours(moving: pinboard.id, before: index, in: rows)
+        else { return }
 
-        let after = target > 0 ? others[target - 1].sortOrder : nil
-        let before = target < others.count ? others[target].sortOrder : nil
-        guard after != nil || before != nil else { return }
-
-        perform { try store.reorderPinboard(id: pinboard.id, after: after, before: before) }
+        perform {
+            try store.reorderPinboard(id: pinboard.id, after: spot.after, before: spot.before)
+        }
     }
 
     /// Las escrituras no lanzan hacia la vista: un fallo se enseña, no revienta

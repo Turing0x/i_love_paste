@@ -220,7 +220,26 @@ public struct ClipboardStore: Sendable {
         }
     }
 
+    /// Un dispositivo por su identificador.
+    ///
+    /// Existe para que la subida no tenga que traerse la tabla entera por cada
+    /// registro del lote: es una lectura por clave primaria.
+    public func device(id: UUID) throws -> Device? {
+        try db.reader.read { db in
+            try Device.fetchOne(db, key: id.uuidString)
+        }
+    }
+
     // MARK: - Pinboards
+
+    /// Un pinboard por su identificador, vivo o no.
+    ///
+    /// Devuelve también los borrados: al subir hace falta poder mandar la lápida.
+    public func pinboard(id: UUID) throws -> Pinboard? {
+        try db.reader.read { db in
+            try Pinboard.fetchOne(db, key: id.uuidString)
+        }
+    }
 
     /// Inserta o actualiza un pinboard.
     public func save(_ pinboard: Pinboard) throws {
@@ -542,6 +561,18 @@ public struct ClipboardStore: Sendable {
                 tableName: table,
                 systemFields: systemFields
             ).save(db)
+        }
+    }
+
+    /// Olvida los campos de sistema de un registro.
+    ///
+    /// Hace falta cuando el servidor responde que el registro no existe: los
+    /// campos guardados llevan una etiqueta de cambio que ya no vale para nada,
+    /// y mientras sigan ahí cada subida se presenta como la modificación de algo
+    /// inexistente y vuelve a fallar. Sin ellos, la siguiente lo crea de cero.
+    public func forgetRecordSystemFields(for recordName: String) throws {
+        try db.writer.write { db in
+            _ = try CKRecordMetadata.filter(key: recordName).deleteAll(db)
         }
     }
 

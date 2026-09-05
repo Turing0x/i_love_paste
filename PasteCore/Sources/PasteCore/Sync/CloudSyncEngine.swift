@@ -34,6 +34,14 @@ public actor CloudSyncEngine {
     private var isSyncing = false
     private var lastSync: Date?
 
+    /// Parada pedida a propósito: el usuario apagó la sincronización, o se
+    /// cerró la sesión de iCloud.
+    ///
+    /// Sin esta marca, `syncNow` no distinguía «todavía no ha arrancado» de
+    /// «se ha parado», y como levanta el motor si no lo hay, volver a primer
+    /// plano o abrir el panel resucitaba una sincronización recién apagada.
+    private var isStopped = false
+
     /// Abrir el panel dispara una sincronización, y el panel se abre decenas de
     /// veces al día: sin freno, cada ⌥⌘V sería una ronda contra CloudKit y el
     /// servidor acabaría limitando el ritmo.
@@ -64,6 +72,7 @@ public actor CloudSyncEngine {
     // MARK: - Ciclo de vida
 
     public func start() throws {
+        isStopped = false
         guard engine == nil else { return }
 
         let serialized = try store.syncEngineState()
@@ -91,7 +100,13 @@ public actor CloudSyncEngine {
         watchQueue()
     }
 
+    /// Para la sincronización hasta que alguien llame a `start()` a propósito.
+    ///
+    /// Soltar el motor deja de entregar eventos, así que un `signIn` posterior
+    /// tampoco llega: quien quiera volver a sincronizar tiene que arrancarlo,
+    /// y el arranque de la app lo hace por su cuenta.
     public func stop() {
+        isStopped = true
         queueWatcher?.cancel()
         queueWatcher = nil
         engine = nil
@@ -110,7 +125,7 @@ public actor CloudSyncEngine {
     public func syncNow(force: Bool = false) async {
         // El actor no basta para no solaparse: entre los `await` de dentro cabe
         // otra llamada.
-        guard !isSyncing else { return }
+        guard !isSyncing, !isStopped else { return }
         if !force, let lastSync, Date().timeIntervalSince(lastSync) < Self.minimumInterval {
             return
         }
@@ -201,9 +216,16 @@ extension CloudSyncEngine: CKSyncEngineDelegate {
         case .stateUpdate(let update):
             // El estado se guarda en la misma base que los datos: si se
             // perdiera, el motor volvería a bajarlo todo creyendo que empieza.
-            try? store.setSyncEngineState(
-                try? JSONEncoder().encode(update.stateSerialization)
-            )
+            //
+            // El `encode` se comprueba aparte a propósito: encadenado con otro
+            // `try?` un fallo al serializar se convertía en un `nil` que
+            // *machacaba* el estado bueno, que es exactamente la pérdida que
+            // esto viene a evitar. Sin estado nuevo, se conserva el anterior.
+            if let serialized = try? JSONEncoder().encode(update.stateSerialization) {
+                try? store.setSyncEngineState(serialized)
+            } else {
+                NSLog("Paste: no se pudo serializar el estado de sincronización")
+            }
 
         case .fetchedRecordZoneChanges(let changes):
             await apply(changes)
@@ -243,10 +265,14 @@ extension CloudSyncEngine: CKSyncEngineDelegate {
                 // local en vez de fallar la subida una y otra vez.
                 return codec.record(for: item, systemFields: systemFields)
             }
-            if let pinboard = try? store.pinboards().first(where: { $0.id == uuid }) {
+            // Búsqueda por clave y no `fetchAll().first(where:)`: esto corre una
+            // vez por registro del lote, y traerse la tabla entera cada vez
+            // convierte una subida de doscientos elementos en doscientas
+            // lecturas completas.
+            if let pinboard = try? store.pinboard(id: uuid) {
                 return codec.record(for: pinboard, systemFields: systemFields)
             }
-            if let device = try? store.devices().first(where: { $0.id == uuid }) {
+            if let device = try? store.device(id: uuid) {
                 return codec.record(for: device, systemFields: systemFields)
             }
             return nil
@@ -326,9 +352,18 @@ extension CloudSyncEngine: CKSyncEngineDelegate {
                 enqueuePending()
 
             case .unknownItem:
-                // El registro ya no existe en el servidor. Se olvidan sus campos
-                // de sistema para que la próxima subida lo cree de cero.
-                try? store.clearPending(recordNames: [failure.record.recordID.recordName])
+                // El registro ya no existe en el servidor. Hay que olvidar sus
+                // campos de sistema —ahí vive la etiqueta de cambio— o la
+                // siguiente subida vuelve a presentarse como la modificación de
+                // algo que no existe y falla igual, en bucle. Desencolar a secas
+                // no bastaba: dejaba el elemento imposible de volver a crear.
+                let name = failure.record.recordID.recordName
+                try? store.forgetRecordSystemFields(for: name)
+                // Y se vuelve a encolar: el registro sigue vivo en local y ahora
+                // sí puede subir como creación.
+                engine?.state.add(pendingRecordZoneChanges: [
+                    .saveRecord(CKRecord.ID(recordName: name, zoneID: zoneID))
+                ])
 
             default:
                 report(failure.error)

@@ -121,21 +121,20 @@ public final class HistoryListViewModel {
         return false
     }
 
-    /// Recoloca un elemento delante del que ocupa `index`, o al final con `nil`.
+    /// Recoloca un elemento delante del que ocupa `index` **en la lista
+    /// visible**, o al final con `nil`.
+    ///
+    /// El cálculo de los vecinos vive en `ReorderPlan`: es el mismo para los
+    /// pinboards y es lo que hay que probar, no el camino hasta el store.
     public func move(_ item: ClipboardItem, before index: Int?) {
         guard allowsManualOrder else { return }
 
-        // El propio arrastrado no cuenta como vecino: soltarlo sobre sí mismo
-        // lo mandaría a un hueco que no existe.
-        let others = items.filter { $0.id != item.id }
-        let target = index.map { min($0, others.count) } ?? others.count
-
-        let after = target > 0 ? others[target - 1].sortOrder : nil
-        let before = target < others.count ? others[target].sortOrder : nil
-        guard after != nil || before != nil else { return }
+        let rows = items.map { (id: $0.id, sortOrder: $0.sortOrder) }
+        guard let spot = ReorderPlan.neighbours(moving: item.id, before: index, in: rows)
+        else { return }
 
         do {
-            try store.reorder(id: item.id, after: after, before: before)
+            try store.reorder(id: item.id, after: spot.after, before: spot.before)
         } catch {
             self.error = String(describing: error)
         }
