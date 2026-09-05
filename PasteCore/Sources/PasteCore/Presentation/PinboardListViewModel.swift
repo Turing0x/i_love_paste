@@ -15,6 +15,10 @@ public final class PinboardListViewModel {
     public private(set) var counts: [UUID: Int] = [:]
     public private(set) var error: String?
 
+    /// Mismo aviso que en `HistoryListViewModel`, y por lo mismo: el widget
+    /// enseña nombres de pinboards y no observa la base.
+    public var onLocalChange: (() -> Void)?
+
     private var observation: Task<Void, Never>?
     private var countsObservation: Task<Void, Never>?
 
@@ -109,7 +113,9 @@ public final class PinboardListViewModel {
     @discardableResult
     private func perform<T>(_ work: () throws -> T) -> T? {
         do {
-            return try work()
+            let result = try work()
+            onLocalChange?()
+            return result
         } catch {
             self.error = String(describing: error)
             return nil

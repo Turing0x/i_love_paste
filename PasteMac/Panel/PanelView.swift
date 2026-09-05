@@ -4,8 +4,17 @@ import SwiftUI
 /// Contenido del panel flotante: buscador, filtros y lista.
 struct PanelView: View {
     let environment: AppEnvironment
-    @State private var model: HistoryListViewModel
-    @State private var pinboards: PinboardListViewModel
+
+    /// Los modelos los posee el `AppEnvironment` y sobreviven a cada apertura:
+    /// aquí no se guardan con `@State`.
+    ///
+    /// `State(initialValue:)` promete una propiedad que esta vista no tiene, e
+    /// ignora el valor recibido en cualquier recreación posterior. Con
+    /// `@Observable`, para algo de fuera lo que corresponde es leerlo tal cual,
+    /// y `@Bindable` cuando además hacen falta enlaces.
+    @Bindable private var model: HistoryListViewModel
+    private let pinboards: PinboardListViewModel
+
     @FocusState private var searchFocused: Bool
 
     init(
@@ -14,8 +23,8 @@ struct PanelView: View {
         pinboards: PinboardListViewModel
     ) {
         self.environment = environment
-        self._model = State(initialValue: model)
-        self._pinboards = State(initialValue: pinboards)
+        self._model = Bindable(model)
+        self.pinboards = pinboards
     }
 
     var body: some View {
@@ -32,6 +41,7 @@ struct PanelView: View {
                 filterBar
                 Divider()
                 list
+                footer
             }
         }
         .background(.regularMaterial)
@@ -72,6 +82,36 @@ struct PanelView: View {
         }
     }
 
+    /// Pie del panel: lo que ha ido mal, o por qué no se guardó lo último.
+    ///
+    /// Son dos avisos y un solo renglón porque compiten por el mismo hueco y no
+    /// pueden ocurrir a la vez de forma interesante: un fallo de escritura es
+    /// más urgente que un descarte, que es rutina.
+    @ViewBuilder
+    private var footer: some View {
+        // Los modelos recogen los fallos de escritura en `error` y hasta ahora
+        // nadie los pintaba: un borrado que no ocurrió parecía haber ocurrido.
+        if let error = model.error ?? pinboards.error {
+            Divider()
+            note(error, symbol: "exclamationmark.triangle")
+        } else if let skip = environment.lastSkipExplanation {
+            // "He copiado algo y no aparece" es la pregunta que más se hace de
+            // una app así, y hasta ahora la respuesta se calculaba y se tiraba.
+            Divider()
+            note(skip, symbol: "nosign")
+        }
+    }
+
+    private func note(_ text: String, symbol: String) -> some View {
+        Label(text, systemImage: symbol)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+    }
+
     private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
@@ -81,7 +121,12 @@ struct PanelView: View {
                 .font(.title3)
                 .focused($searchFocused)
                 .onSubmit { activateSelection() }
+                // El campo no lleva etiqueta visible: la lupa de al lado es
+                // decorativa y no se lee.
+                .accessibilityLabel("Buscar en el historial")
         }
+        // La lupa duplica lo que ya dice la etiqueta del campo.
+        .accessibilityElement(children: .contain)
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
     }
@@ -98,6 +143,7 @@ struct PanelView: View {
                 .toggleStyle(.button)
                 .buttonStyle(.accessoryBar)
                 .controlSize(.small)
+                .accessibilityLabel("Filtrar por \(kind.label)")
             }
 
             Spacer()
@@ -111,6 +157,7 @@ struct PanelView: View {
             .labelsHidden()
             .controlSize(.small)
             .frame(maxWidth: 170)
+            .accessibilityLabel("Filtrar por app de origen")
 
             Picker("", selection: $model.datePreset) {
                 ForEach(DateRangePreset.allCases, id: \.self) { preset in
@@ -120,6 +167,7 @@ struct PanelView: View {
             .labelsHidden()
             .controlSize(.small)
             .frame(maxWidth: 150)
+            .accessibilityLabel("Filtrar por fecha")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -203,14 +251,15 @@ struct PanelView: View {
 
         Divider()
 
-        Button("Borrar", role: .destructive) {
-            try? environment.store?.softDelete(id: item.id)
-        }
+        Button("Borrar", role: .destructive) { model.delete(id: item.id) }
     }
 
     /// Mueve un elemento a un pinboard, o lo devuelve al historial con `nil`.
+    ///
+    /// Pasa por el modelo y no por el store: es el único sitio que recoge el
+    /// fallo en vez de tragárselo con un `try?`.
     private func move(_ id: UUID, to pinboardID: UUID?) {
-        try? environment.store?.move(id: id, toPinboard: pinboardID)
+        model.move(id: id, toPinboard: pinboardID)
     }
 
     private func activateSelection(asPlainText: Bool = false) {

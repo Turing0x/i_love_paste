@@ -65,6 +65,9 @@ struct PinboardSidebar: View {
             )
             .contentShape(.rect)
             .onTapGesture { scope = target }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(title)
+            .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
 
         // Soltar sobre "Historial" saca el elemento de su pinboard, que es el
         // camino de vuelta natural del arrastre. "Todo" no acepta nada: antes
@@ -93,6 +96,8 @@ struct PinboardSidebar: View {
     private func normalRow(_ board: Pinboard, index: Int) -> some View {
         let isSelected = scope == .pinboard(board.id)
 
+        let count = model.count(for: board)
+
         return HStack(spacing: 8) {
             Circle()
                 .fill(PinboardColor.color(hex: board.colorHex))
@@ -100,8 +105,8 @@ struct PinboardSidebar: View {
 
             Text(board.name).lineLimit(1)
             Spacer(minLength: 4)
-            if model.count(for: board) > 0 {
-                Text("\(model.count(for: board))")
+            if count > 0 {
+                Text("\(count)")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(isSelected ? .white.opacity(0.8) : .secondary)
             }
@@ -109,6 +114,11 @@ struct PinboardSidebar: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .rowStyle(isSelected: isSelected, isDropTarget: dropTargetID == board.id)
         .contentShape(.rect)
+        .accessibilityElement(children: .combine)
+        // Mismo criterio que en el iPhone: el color y el contador se dicen con
+        // palabras, porque en pantalla son un círculo y una cifra sin nombre.
+        .accessibilityLabel(Self.label(for: board, count: count))
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
         .onTapGesture { scope = .pinboard(board.id) }
         .contextMenu { menu(for: board) }
         .draggable(PinboardTransfer(id: board.id))
@@ -221,6 +231,17 @@ struct PinboardSidebar: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .foregroundStyle(.secondary)
+    }
+
+    private static func label(for board: Pinboard, count: Int) -> String {
+        var texto = board.name
+        if let color = PinboardColor.name(hex: board.colorHex) {
+            texto += ", color \(color.lowercased())"
+        }
+        if count > 0 {
+            texto += count == 1 ? ", 1 elemento" : ", \(count) elementos"
+        }
+        return texto
     }
 
     // MARK: - Renombrado

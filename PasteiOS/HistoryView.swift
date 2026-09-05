@@ -5,10 +5,17 @@ import WidgetKit
 
 /// Pantalla principal: historial, pinboards, búsqueda y filtros.
 struct HistoryView: View {
-    private let store: ClipboardStore
     private let capture: SharedCapture?
-    @State private var model: HistoryListViewModel
-    @State private var pinboards: PinboardListViewModel
+
+    /// Los modelos los posee el `AppEnvironment` y sobreviven a cada apertura:
+    /// aquí no se guardan con `@State`.
+    ///
+    /// `State(initialValue:)` promete una propiedad que esta vista no tiene, e
+    /// ignora el valor recibido en cualquier recreación posterior. Con
+    /// `@Observable`, para algo de fuera lo que corresponde es leerlo tal cual,
+    /// y `@Bindable` cuando además hacen falta enlaces.
+    @Bindable private var model: HistoryListViewModel
+    private let pinboards: PinboardListViewModel
 
     /// La sincronización vive en el `AppEnvironment`, pero la vista no lo
     /// necesita entero: le basta con saber si está en marcha y cómo pedirla.
@@ -19,17 +26,15 @@ struct HistoryView: View {
     @State private var showingClearConfirmation = false
 
     init(
-        store: ClipboardStore,
         capture: SharedCapture?,
         model: HistoryListViewModel,
         pinboards: PinboardListViewModel,
         isSyncing: Bool,
         onSync: @escaping () -> Void
     ) {
-        self.store = store
         self.capture = capture
-        _model = State(initialValue: model)
-        _pinboards = State(initialValue: pinboards)
+        self._model = Bindable(model)
+        self.pinboards = pinboards
         self.isSyncing = isSyncing
         self.onSync = onSync
     }
@@ -56,9 +61,9 @@ struct HistoryView: View {
                 .sheet(isPresented: $showingPinboards) {
                     PinboardsView(model: pinboards) { deletedID in
                         // La lista no puede quedarse apuntando a un pinboard que
-                        // ya no existe: se vería vacía sin explicación.
+                        // ya no existe: se vería vacía sin explicación. El aviso
+                        // al widget lo da el propio modelo al borrar.
                         if model.scope == .pinboard(deletedID) { model.scope = .history }
-                        WidgetCenter.shared.reloadAllTimelines()
                     }
                 }
                 .confirmationDialog(
@@ -145,12 +150,19 @@ struct HistoryView: View {
         } label: {
             Image(systemName: "trash")
                 .foregroundStyle(.red)
-                .frame(width: 32, height: 32)
+                // 44×44 es el mínimo de las guías de interfaz humana. Con 32 el
+                // botón se acierta a la primera con un dedo fino y a la tercera
+                // con cualquier otro.
+                .frame(minWidth: Self.tapTarget, minHeight: Self.tapTarget)
                 .contentShape(.rect)
         }
         // Sin `.plain` el `List` trata cualquier toque de la fila como pulsación
         // de todos sus botones.
         .buttonStyle(.plain)
+        // Un botón que solo es un símbolo no tiene nombre para VoiceOver: sin
+        // esto se anuncia como "botón" a secas, y hay dos seguidos.
+        .accessibilityLabel("Borrar")
+        .accessibilityHint(item.displayTitle)
     }
 
     /// Añadir a un pinboard, o sacarlo del que esté.
@@ -175,12 +187,19 @@ struct HistoryView: View {
             } label: {
                 Image(systemName: pinned ? "pin.fill" : "pin")
                     .foregroundStyle(pinned ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                    .frame(width: 32, height: 32)
+                    .frame(minWidth: Self.tapTarget, minHeight: Self.tapTarget)
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
+            // El estado "está en un pinboard" solo lo dice el relleno del icono:
+            // en la etiqueta tiene que ir con palabras.
+            .accessibilityLabel(pinned ? "En un pinboard" : "Añadir a un pinboard")
+            .accessibilityHint(item.displayTitle)
         }
     }
+
+    /// Mínimo táctil de las guías de interfaz humana.
+    private static let tapTarget: CGFloat = 44
 
     @ViewBuilder
     private func menu(for item: ClipboardItem) -> some View {
@@ -244,6 +263,8 @@ struct HistoryView: View {
         } label: {
             Label("Ámbito", systemImage: "line.3.horizontal.decrease.circle")
         }
+        .accessibilityLabel("Cambiar de lista")
+        .accessibilityValue(scopeTitle)
     }
 
     private var kindFilters: some View {
@@ -256,6 +277,11 @@ struct HistoryView: View {
                     }
                     .buttonStyle(.bordered)
                     .tint(on ? .accentColor : .secondary)
+                    // Activo y desactivado se distinguen solo por el tinte, que
+                    // no existe para VoiceOver ni para quien no separa esos dos
+                    // colores.
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                    .accessibilityLabel("Filtrar por \(kind.label)")
                 }
             }
             .padding(.horizontal)
@@ -276,15 +302,16 @@ struct HistoryView: View {
 
     /// Borrado lógico: la fila se queda con `deletedAt` para que el otro
     /// dispositivo se entere en el siguiente ciclo en vez de reenviarla.
+    ///
+    /// Va por el modelo, que es quien recoge el fallo y quien avisa al widget.
+    /// Repartido por la vista, el aviso se olvidaba en cuanto aparecía un
+    /// camino de escritura nuevo.
     private func delete(_ item: ClipboardItem) {
-        try? store.softDelete(id: item.id)
-        // El widget lee la misma base, pero no se entera de que ha cambiado.
-        WidgetCenter.shared.reloadAllTimelines()
+        model.delete(id: item.id)
     }
 
     private func move(_ item: ClipboardItem, to pinboardID: UUID?) {
-        try? store.move(id: item.id, toPinboard: pinboardID)
-        WidgetCenter.shared.reloadAllTimelines()
+        model.move(id: item.id, toPinboard: pinboardID)
     }
 
     /// Puente entre el índice que da `List` al arrastrar y el orden fraccional
@@ -297,8 +324,7 @@ struct HistoryView: View {
     /// Vacía el historial suelto. Los pinboards no se tocan: son justamente lo
     /// que el usuario ha decidido conservar.
     private func clearHistory() {
-        try? store.softDeleteHistory()
-        WidgetCenter.shared.reloadAllTimelines()
+        model.clearHistory()
     }
 
     /// Guarda lo pegado. La política —tipos sensibles, tope de tamaño,
@@ -312,6 +338,9 @@ struct HistoryView: View {
         if case .pinboard(let id) = model.scope { destination = id }
 
         try? capture?.capture(snapshot, pinboardID: destination)
+        // El único camino de escritura que no pasa por el modelo: la política de
+        // captura vive en `SharedCapture`, que es el mismo por el que entra la
+        // Share Extension. De ahí que el aviso al widget siga aquí a mano.
         WidgetCenter.shared.reloadAllTimelines()
     }
 }

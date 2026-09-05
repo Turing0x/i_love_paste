@@ -83,6 +83,8 @@ struct KeyboardView: View {
             .buttonStyle(.bordered)
             .tint(scope == target ? .accentColor : .secondary)
             .controlSize(.small)
+            // La pestaña activa se distingue solo por el tinte.
+            .accessibilityAddTraits(scope == target ? .isSelected : [])
     }
 
     private var list: some View {
@@ -107,6 +109,8 @@ struct KeyboardView: View {
                         .padding(.vertical, 9)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("\(item.kind.label): \(item.displayTitle)")
+                    .accessibilityHint("Toca dos veces para insertarlo")
                     Divider().padding(.leading, 34)
                 }
             }
@@ -128,9 +132,14 @@ struct KeyboardView: View {
             if needsGlobe {
                 Button(action: onNextKeyboard) {
                     Image(systemName: "globe")
+                        // Mínimo táctil: es la única salida del teclado y estaba
+                        // del tamaño del glifo.
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .padding(10)
+                .padding(.horizontal, 4)
+                .accessibilityLabel("Siguiente teclado")
             }
             Spacer()
         }

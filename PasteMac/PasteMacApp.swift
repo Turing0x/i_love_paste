@@ -131,6 +131,18 @@ final class AppEnvironment {
         }
     }
 
+    /// Por qué se descartó lo último que se copió, o `nil` si no hay nada que
+    /// contar.
+    ///
+    /// El vigilante ya lo apuntaba; lo que faltaba era enseñarlo. `unchanged` y
+    /// `empty` no son descartes que explicar —no había nada que guardar—, y su
+    /// explicación es la cadena vacía.
+    var lastSkipExplanation: String? {
+        guard let reason = watcher?.lastSkip else { return nil }
+        let text = reason.explanation
+        return text.isEmpty ? nil : text
+    }
+
     /// No se guarda en una propiedad: el permiso se concede y se retira desde
     /// Ajustes sin avisar a la app.
     var isAccessibilityTrusted: Bool { AccessibilityAuthorization.isTrusted }

@@ -31,5 +31,20 @@ struct ItemRow: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 2)
+        // Sin esto VoiceOver lee cuatro elementos sueltos —icono, título, app,
+        // fecha— y hay que pasar por los cuatro para llegar al siguiente
+        // elemento del historial. Junta lee una fila, que es lo que es.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityHint("Toca dos veces para copiar")
+    }
+
+    /// Tipo, contenido y procedencia en una frase.
+    ///
+    /// El tipo entra explícito porque en pantalla lo dice un símbolo, y el
+    /// símbolo no se lee.
+    private var accessibilityLabel: String {
+        let origen = item.sourceAppName ?? "origen desconocido"
+        return "\(item.kind.label): \(item.displayTitle). De \(origen)"
     }
 }

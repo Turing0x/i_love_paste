@@ -22,6 +22,15 @@ public enum PinboardColor {
         ("Gris", "8E8E93")
     ]
 
+    /// Nombre del color, para quien no lo ve.
+    ///
+    /// El punto de color es la única señal de qué color tiene un pinboard, y un
+    /// `Circle` relleno no dice nada a VoiceOver. El nombre ya existe en la
+    /// paleta: lo que faltaba era poder pedirlo por el valor guardado.
+    public static func name(hex: String) -> String? {
+        palette.first { $0.hex.caseInsensitiveCompare(hex) == .orderedSame }?.name
+    }
+
     /// Convierte un `RRGGBB` en color. Un valor ilegible cae en gris en vez de
     /// desaparecer: un pinboard sin punto parecería un fallo de pintado.
     public static func color(hex: String) -> Color {

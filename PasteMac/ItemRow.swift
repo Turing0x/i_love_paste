@@ -49,44 +49,32 @@ struct ItemRow: View {
         .foregroundStyle(isSelected ? .white : .primary)
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel)
+        // La selección se enseña con el fondo de acento y nada más: sin el
+        // rasgo, quien navega con VoiceOver no sabe dónde está el cursor.
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
-}
 
-/// Hoja para poner un título a mano a un elemento.
-struct RenameSheet: View {
-    let item: ClipboardItem
-    let onSave: (String?) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var title: String = ""
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Renombrar elemento").font(.headline)
-            TextField("Título", text: $title)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 320)
-            HStack {
-                // Vaciar el campo devuelve el título derivado del contenido.
-                Button("Quitar título") {
-                    onSave(nil)
-                    dismiss()
-                }
-                Spacer()
-                Button("Cancelar") { dismiss() }
-                Button("Guardar") {
-                    onSave(title.isEmpty ? nil : title)
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-            }
+    /// Tipo, contenido, procedencia y atajo, en una frase.
+    ///
+    /// El "⌘1" se deletrea: leído tal cual suena a ruido.
+    private var accessibilityLabel: String {
+        let origen = item.sourceAppName ?? "origen desconocido"
+        var texto = "\(item.kind.label): \(item.displayTitle). De \(origen)"
+        if let quickPasteNumber {
+            texto += ". Atajo Comando \(quickPasteNumber)"
         }
-        .padding()
-        .onAppear { title = item.title ?? "" }
+        return texto
     }
 }
 
 extension SkipReason {
+    /// Por qué no se guardó lo último que se copió, en una frase.
+    ///
+    /// Lo enseña el pie del panel. Sin esto, la pausa y las exclusiones son
+    /// indistinguibles de un fallo: se copia algo, no aparece, y no hay nada
+    /// que mirar.
     var explanation: String {
         switch self {
         case .unchanged, .empty: ""

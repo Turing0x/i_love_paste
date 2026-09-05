@@ -7,7 +7,14 @@ import SwiftUI
 /// modal: en un iPhone no hay sitio para una columna permanente, y el menú de
 /// ámbito solo sirve para cambiar de lista, no para organizarla.
 struct PinboardsView: View {
-    @State private var model: PinboardListViewModel
+    /// Los modelos los posee el `AppEnvironment` y sobreviven a cada apertura:
+    /// aquí no se guardan con `@State`.
+    ///
+    /// `State(initialValue:)` promete una propiedad que esta vista no tiene, e
+    /// ignora el valor recibido en cualquier recreación posterior. Con
+    /// `@Observable`, para algo de fuera lo que corresponde es leerlo tal cual,
+    /// y `@Bindable` cuando además hacen falta enlaces.
+    private let model: PinboardListViewModel
 
     /// Avisa de qué pinboard se ha borrado para que quien presenta la hoja
     /// pueda soltar el ámbito si estaba dentro de él.
@@ -21,7 +28,7 @@ struct PinboardsView: View {
     @State private var isCreating = false
 
     init(model: PinboardListViewModel, onDeleted: @escaping (UUID) -> Void) {
-        _model = State(initialValue: model)
+        self.model = model
         self.onDeleted = onDeleted
     }
 
@@ -33,6 +40,7 @@ struct PinboardsView: View {
                 .toolbar {
                     ToolbarItem(placement: .topBarLeading) {
                         Button("Nuevo", systemImage: "plus") { startCreate() }
+                            .accessibilityLabel("Nuevo pinboard")
                     }
                     ToolbarItem(placement: .topBarLeading) { EditButton() }
                     ToolbarItem(placement: .topBarTrailing) {
@@ -100,7 +108,9 @@ struct PinboardsView: View {
     }
 
     private func row(_ board: Pinboard) -> some View {
-        HStack(spacing: 10) {
+        let count = model.count(for: board)
+
+        return HStack(spacing: 10) {
             Circle()
                 .fill(PinboardColor.color(hex: board.colorHex))
                 .frame(width: 10, height: 10)
@@ -108,13 +118,26 @@ struct PinboardsView: View {
             Text(board.name).lineLimit(1)
             Spacer(minLength: 4)
 
-            if model.count(for: board) > 0 {
-                Text("\(model.count(for: board))")
+            if count > 0 {
+                Text("\(count)")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
         }
         .contentShape(.rect)
+        .accessibilityElement(children: .combine)
+        // El color es un círculo relleno y el número, una cifra suelta: sin
+        // nombrarlos, VoiceOver lee "8" después del nombre y no dice de qué.
+        .accessibilityLabel(Self.label(for: board, count: count))
+    }
+
+    private static func label(for board: Pinboard, count: Int) -> String {
+        var texto = board.name
+        if let color = PinboardColor.name(hex: board.colorHex) {
+            texto += ", color \(color.lowercased())"
+        }
+        texto += count == 1 ? ", 1 elemento" : ", \(count) elementos"
+        return texto
     }
 
     @ViewBuilder

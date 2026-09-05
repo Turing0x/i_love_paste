@@ -80,6 +80,12 @@ final class AppEnvironment {
             history?.scope = lastScope.load()
             history?.onScopeChange = { [lastScope] scope in lastScope.save(scope) }
 
+            // El widget lee la misma base y no la observa. Que el aviso se
+            // enganche una vez aquí, y no se repita tras cada escritura de cada
+            // vista, es lo que hace que no se pueda olvidar.
+            history?.onLocalChange = { WidgetCenter.shared.reloadAllTimelines() }
+            pinboards?.onLocalChange = { WidgetCenter.shared.reloadAllTimelines() }
+
             let sync = CloudSyncEngine(store: store)
             self.sync = sync
             Task { try? await sync.start() }
@@ -161,11 +167,9 @@ struct RootView: View {
     let environment: AppEnvironment
 
     var body: some View {
-        if let store = environment.store,
-           let history = environment.history,
+        if let history = environment.history,
            let pinboards = environment.pinboards {
             HistoryView(
-                store: store,
                 capture: environment.capture,
                 model: history,
                 pinboards: pinboards,

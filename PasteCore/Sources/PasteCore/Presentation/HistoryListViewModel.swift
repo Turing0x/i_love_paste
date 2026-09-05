@@ -19,6 +19,18 @@ public final class HistoryListViewModel {
     /// pinboard, un deep link del widget…), para que quien lo escuche pueda
     /// persistirlo como "última posición abierta".
     public var onScopeChange: ((HistoryFilter.Scope) -> Void)?
+
+    /// Avisa de que una escritura ha salido de aquí.
+    ///
+    /// Lo escucha el iPhone para pedirle al widget que se refresque: lee la
+    /// misma base pero no la observa, así que si nadie se lo dice se queda
+    /// enseñando lo de antes. Es un aviso y no una llamada a WidgetKit porque
+    /// el Mac no tiene widget, y `PasteCore` no tiene por qué saber cuál de las
+    /// dos apps lo está usando.
+    ///
+    /// Antes esto lo hacía cada vista después de cada escritura, repetido en
+    /// seis sitios: el primero que escribiera desde un séptimo se olvidaría.
+    public var onLocalChange: (() -> Void)?
     public var query: String = "" { didSet { restartIfNeeded(oldValue) } }
     public var kinds: Set<ContentKind> = [] { didSet { restartIfNeeded(oldValue) } }
     public var bundleID: String? { didSet { restartIfNeeded(oldValue) } }
@@ -133,10 +145,40 @@ public final class HistoryListViewModel {
         guard let spot = ReorderPlan.neighbours(moving: item.id, before: index, in: rows)
         else { return }
 
+        perform { try store.reorder(id: item.id, after: spot.after, before: spot.before) }
+    }
+
+    // MARK: - Escritura
+
+    /// Borra un elemento. Lógico, como todo borrado aquí.
+    public func delete(id: UUID) {
+        perform { try store.softDelete(id: id) }
+    }
+
+    /// Mueve un elemento a un pinboard, o lo devuelve al historial con `nil`.
+    public func move(id: UUID, toPinboard pinboardID: UUID?) {
+        perform { try store.move(id: id, toPinboard: pinboardID) }
+    }
+
+    /// Vacía el historial suelto. Los pinboards no se tocan.
+    public func clearHistory() {
+        perform { try store.softDeleteHistory() }
+    }
+
+    /// Las escrituras pasan todas por aquí.
+    ///
+    /// Es lo que garantiza dos cosas que antes dependían de que la vista se
+    /// acordase: que un fallo quede recogido en `error` en vez de perderse en un
+    /// `try?`, y que quien escuche `onLocalChange` se entere.
+    @discardableResult
+    private func perform<T>(_ work: () throws -> T) -> T? {
         do {
-            try store.reorder(id: item.id, after: spot.after, before: spot.before)
+            let result = try work()
+            onLocalChange?()
+            return result
         } catch {
             self.error = String(describing: error)
+            return nil
         }
     }
 
