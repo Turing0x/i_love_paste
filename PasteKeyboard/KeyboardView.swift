@@ -5,6 +5,10 @@ import SwiftUI
 struct KeyboardView: View {
     let hasFullAccess: Bool
 
+    /// Sin acceso completo esto vale `true`: no se puede comprobar, y el aviso
+    /// que toca enseñar entonces es el del permiso.
+    let isSubscribed: Bool
+
     /// La base la abre el controlador, una vez. Aquí solo se lee: recrearla en
     /// cada cambio de pestaña era el error que había.
     let store: ClipboardStore?
@@ -25,12 +29,14 @@ struct KeyboardView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if hasFullAccess {
+            if !hasFullAccess {
+                fullAccessNotice
+            } else if !isSubscribed {
+                subscriptionNotice
+            } else {
                 scopeTabs
                 Divider()
                 list
-            } else {
-                fullAccessNotice
             }
 
             Divider()
@@ -54,6 +60,24 @@ struct KeyboardView: View {
             // que no pedirlo.
             Text("Ajustes › General › Teclado › Teclados › Paste.\n"
                  + "Paste lo necesita solo para leer tu historial; no envía nada.")
+                .font(.caption)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding()
+    }
+
+    /// Un teclado no puede abrir la app —no tiene `openURL`—, así que esto solo
+    /// puede decir dónde se arregla.
+    private var subscriptionNotice: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "lock")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+            Text("Suscripción requerida")
+                .font(.callout.bold())
+            Text("Abre la app de Paste para suscribirte.")
                 .font(.caption)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)

@@ -14,55 +14,84 @@ struct ShareView: View {
     @State private var destination: UUID?
     @State private var error: String?
     @State private var isSaving = false
+    @State private var isLocked = false
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Se guardará") {
-                    if let text = snapshot?.string {
-                        Text(text).lineLimit(4)
-                    } else if error == nil {
-                        // Cargar del proveedor es asíncrono y puede tardar lo
-                        // suyo con contenido grande.
-                        HStack { ProgressView(); Text("Leyendo…") }
+            // Un solo muro: o se guarda y se ve, o ni se guarda. Aceptar aquí lo
+            // que luego la app no deja abrir sería quedarse con algo del usuario
+            // a cambio de nada.
+            if isLocked {
+                ContentUnavailableView(
+                    "Suscripción requerida",
+                    systemImage: "lock",
+                    description: Text("Abre la app de Paste para suscribirte.")
+                )
+                .navigationTitle("Guardar en Paste")
+                .navigationBarTitleDisplayMode(.inline)
+                // Sin esto la hoja se queda sin forma de cerrarse.
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancelar", action: onCancel)
                     }
                 }
-
-                // §35: la extensión sirve también para guardar directamente en
-                // un pinboard, no solo en el historial.
-                Section("Destino") {
-                    Picker("Destino", selection: $destination) {
-                        Text("Historial").tag(UUID?.none)
-                        ForEach(pinboards) { board in
-                            Text(board.name).tag(UUID?.some(board.id))
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.inline)
-                }
-
-                if let error {
-                    Section {
-                        Text(error).font(.callout).foregroundStyle(.red)
-                    }
-                }
-            }
-            .navigationTitle("Guardar en Paste")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancelar", action: onCancel)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Guardar", action: save)
-                        .disabled(snapshot == nil || isSaving)
-                }
+            } else {
+                form
             }
         }
         .task { await load() }
     }
 
+    private var form: some View {
+        Form {
+            Section("Se guardará") {
+                if let text = snapshot?.string {
+                    Text(text).lineLimit(4)
+                } else if error == nil {
+                    // Cargar del proveedor es asíncrono y puede tardar lo
+                    // suyo con contenido grande.
+                    HStack { ProgressView(); Text("Leyendo…") }
+                }
+            }
+
+            // §35: la extensión sirve también para guardar directamente en
+            // un pinboard, no solo en el historial.
+            Section("Destino") {
+                Picker("Destino", selection: $destination) {
+                    Text("Historial").tag(UUID?.none)
+                    ForEach(pinboards) { board in
+                        Text(board.name).tag(UUID?.some(board.id))
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.inline)
+            }
+
+            if let error {
+                Section {
+                    Text(error).font(.callout).foregroundStyle(.red)
+                }
+            }
+        }
+        .navigationTitle("Guardar en Paste")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancelar", action: onCancel)
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Guardar", action: save)
+                    .disabled(snapshot == nil || isSaving)
+            }
+        }
+    }
+
     private func load() async {
+        guard decideAccess(EntitlementStore.sharedGroup().load(), policy: .local).isGranted else {
+            isLocked = true
+            return
+        }
+
         do {
             // La base se abre aquí y no en el controlador para que el error
             // tenga dónde enseñarse.

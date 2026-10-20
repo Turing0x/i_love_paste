@@ -16,6 +16,7 @@ final class KeyboardViewController: UIInputViewController {
             // no hay historial que enseñar, y el aviso es lo único que se puede
             // ofrecer.
             hasFullAccess: hasFullAccess,
+            isSubscribed: Self.isSubscribed(hasFullAccess: hasFullAccess),
             store: Self.openStore(hasFullAccess: hasFullAccess),
             needsGlobe: needsInputModeSwitchKey,
             onInsert: { [weak self] text in
@@ -51,6 +52,16 @@ final class KeyboardViewController: UIInputViewController {
     /// Sin acceso completo no se intenta siquiera: el sistema no deja llegar al
     /// contenedor compartido y el único resultado sería un error que ya está
     /// explicado en pantalla.
+    /// Sin acceso completo no se puede leer la caché del derecho, así que no se
+    /// sabe nada: se responde que sí para que mande el aviso del permiso.
+    ///
+    /// Al revés —dar por no suscrito lo que no se puede comprobar— el teclado le
+    /// pediría pagar a quien ya paga, que es el peor error posible aquí.
+    private static func isSubscribed(hasFullAccess: Bool) -> Bool {
+        guard hasFullAccess else { return true }
+        return decideAccess(EntitlementStore.sharedGroup().load(), policy: .local).isGranted
+    }
+
     private static func openStore(hasFullAccess: Bool) -> ClipboardStore? {
         guard hasFullAccess else { return nil }
         do {

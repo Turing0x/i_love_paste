@@ -18,7 +18,10 @@ struct PasteiOSApp: App {
             // En iOS el push silencioso llega cuando el sistema quiere. Abrir la
             // app es justo cuando el usuario espera ver lo que copió en el Mac,
             // así que volver a primer plano fuerza una sincronización.
-            if phase == .active { environment.syncNow() }
+            if phase == .active {
+                environment.refreshAccess()
+                environment.syncNow()
+            }
         }
     }
 }
@@ -48,6 +51,15 @@ final class AppEnvironment {
         defaults: UserDefaults(suiteName: AppPaths.sharedGroupIdentifier) ?? .standard
     )
 
+    private let entitlements = EntitlementStore.sharedGroup()
+
+    /// Si la app está abierta o detrás del muro.
+    ///
+    /// Se resuelve leyendo la caché, sin red y antes de la primera pantalla: a
+    /// quien paga no se le puede colar un muro parpadeando mientras se consulta
+    /// la tienda.
+    private(set) var access: AccessDecision = .locked(.never)
+
     /// Para que el botón de la barra pueda enseñar que está trabajando.
     private(set) var isSyncing = false
 
@@ -57,6 +69,8 @@ final class AppEnvironment {
     private static let retentionMaxItems = 10_000
 
     init() {
+        access = decideAccess(entitlements.load(), policy: .local)
+
         do {
             // `SharedCapture` abre la base en el grupo compartido, que es lo que
             // hace que la Share Extension escriba donde la app lee, y trae ya la
@@ -116,6 +130,15 @@ final class AppEnvironment {
         }
     }
 
+    /// Vuelve a decidir el acceso con lo que haya ahora en la caché.
+    ///
+    /// Hace falta al volver a primer plano porque el muro depende del reloj: una
+    /// prueba puede haber terminado con la app en segundo plano, y quien acaba de
+    /// suscribirse espera entrar sin reiniciar.
+    func refreshAccess() {
+        access = decideAccess(entitlements.load(), policy: .local)
+    }
+
     /// Fuerza un ciclo de sincronización.
     ///
     /// Antes esto llamaba a `start()`, que es idempotente: con el motor ya
@@ -167,8 +190,13 @@ struct RootView: View {
     let environment: AppEnvironment
 
     var body: some View {
-        if let history = environment.history,
-           let pinboards = environment.pinboards {
+        // Conmutar la raíz y no presentar una lámina: una lámina tiene
+        // superficie de descarte, y un muro que se puede deslizar hacia abajo no
+        // es un muro.
+        if case .locked(let reason) = environment.access {
+            LockedView(reason: reason)
+        } else if let history = environment.history,
+                  let pinboards = environment.pinboards {
             HistoryView(
                 capture: environment.capture,
                 model: history,

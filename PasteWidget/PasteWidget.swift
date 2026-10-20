@@ -10,6 +10,9 @@ struct PasteEntry: TimelineEntry {
     /// A dónde lleva tocar el widget.
     let url: URL
     let error: String?
+    /// Sin suscripción el widget no enseña contenido, ni siquiera el que ya
+    /// está guardado: es la misma pantalla de bloqueo que la app, en pequeño.
+    let isLocked: Bool
 }
 
 struct Provider: AppIntentTimelineProvider {
@@ -19,7 +22,8 @@ struct Provider: AppIntentTimelineProvider {
             title: "Historial",
             items: [],
             url: URL(string: "paste://scope/history")!,
-            error: nil
+            error: nil,
+            isLocked: false
         )
     }
 
@@ -45,20 +49,42 @@ struct Provider: AppIntentTimelineProvider {
         let url = board.map { URL(string: "paste://scope/pinboard/\($0.id.uuidString)")! }
             ?? URL(string: "paste://scope/history")!
 
+        // El muro se mira antes que la base: sin suscripción no se enseña ni un
+        // título de elemento, y tocar el widget lleva a suscribirse en vez de a
+        // una lista vacía sin explicación.
+        guard decideAccess(EntitlementStore.sharedGroup().load(), policy: .local).isGranted else {
+            return PasteEntry(
+                date: Date(),
+                title: title,
+                items: [],
+                url: URL(string: "paste://paywall")!,
+                error: nil,
+                isLocked: true
+            )
+        }
+
         do {
             let store = try WidgetStore.open()
             let items = try store.items(
                 matching: HistoryFilter(scope: scope),
                 limit: family == .systemSmall ? 3 : 6
             )
-            return PasteEntry(date: Date(), title: title, items: items, url: url, error: nil)
+            return PasteEntry(
+                date: Date(),
+                title: title,
+                items: items,
+                url: url,
+                error: nil,
+                isLocked: false
+            )
         } catch {
             return PasteEntry(
                 date: Date(),
                 title: title,
                 items: [],
                 url: url,
-                error: "Sin acceso al historial"
+                error: "Sin acceso al historial",
+                isLocked: false
             )
         }
     }
@@ -89,7 +115,13 @@ struct PasteWidgetView: View {
                 .font(.caption.bold())
                 .foregroundStyle(.secondary)
 
-            if let error = entry.error {
+            if entry.isLocked {
+                HStack(spacing: 6) {
+                    Image(systemName: "lock").font(.caption2)
+                    Text("Suscripción requerida").font(.caption)
+                }
+                .foregroundStyle(.secondary)
+            } else if let error = entry.error {
                 Text(error).font(.caption).foregroundStyle(.secondary)
             } else if entry.items.isEmpty {
                 Text("Nada guardado todavía")

@@ -12,62 +12,88 @@ struct PasteMacApp: App {
         // del panel flotante. Sin esta escena, sin icono en el Dock, no habría
         // forma de salir ni de saber que está funcionando.
         MenuBarExtra("Paste", systemImage: "doc.on.clipboard") {
-            Button("Mostrar Paste") { environment.panel.show() }
-                .keyboardShortcut("v", modifiers: [.option, .command])
-
-            Divider()
-
-            Toggle("Pausar captura", isOn: Binding(
-                get: { environment.isPaused },
-                set: { environment.isPaused = $0 }
-            ))
-
-            Toggle("Pegar siempre como texto plano", isOn: Binding(
-                get: { environment.alwaysPlainText },
-                set: { environment.alwaysPlainText = $0 }
-            ))
-
-            // El estado se lee del sistema en cada apertura del menú, no de una
-            // preferencia propia: el usuario puede desactivarlo desde Ajustes >
-            // Elementos de inicio y la app no se entera.
-            Toggle("Abrir al iniciar sesión", isOn: Binding(
-                get: { environment.opensAtLogin },
-                set: { environment.opensAtLogin = $0 }
-            ))
-
-            Divider()
-
-            Toggle("Sincronizar con iCloud", isOn: Binding(
-                get: { environment.syncEnabled },
-                set: { environment.syncEnabled = $0 }
-            ))
-            // Sin estado visible, una sincronización rota es indistinguible de
-            // una ociosa.
-            Text(environment.syncStatusText).font(.caption)
-
-            // El push silencioso llega cuando el sistema quiere. Esto es el
-            // camino para cuando el usuario ya está mirando y no quiere esperar.
-            Button("Sincronizar ahora") { environment.syncNow() }
-                .disabled(!environment.syncEnabled)
-
-            // El menú se reconstruye cada vez que se abre, así que basta con
-            // leer el permiso aquí para que la opción desaparezca sola en
-            // cuanto se conceda desde Ajustes.
-            if !environment.isAccessibilityTrusted {
-                Divider()
-                Button("Activar Direct Paste…") { environment.requestAccessibility() }
+            if case .locked(let reason) = environment.access {
+                lockedMenu(reason)
+            } else {
+                fullMenu
             }
-
-            if let error = environment.openError {
-                Divider()
-                Text(error).font(.caption)
-            }
-
-            Divider()
-
-            Button("Salir de Paste") { NSApplication.shared.terminate(nil) }
-                .keyboardShortcut("q")
         }
+    }
+
+    /// Bloqueado no se enseñan las preferencias: pausar la captura o elegir si se
+    /// sincroniza no significan nada cuando no se está capturando nada.
+    @ViewBuilder
+    private func lockedMenu(_ reason: LockReason) -> some View {
+        Text(MacLockedCopy.title(reason))
+        Text(MacLockedCopy.detail(reason)).font(.caption)
+
+        Divider()
+
+        Button("Comprobar de nuevo") { environment.refreshAccess() }
+
+        Divider()
+
+        Button("Salir de Paste") { NSApplication.shared.terminate(nil) }
+            .keyboardShortcut("q")
+    }
+
+    @ViewBuilder
+    private var fullMenu: some View {
+        Button("Mostrar Paste") { environment.panel.show() }
+            .keyboardShortcut("v", modifiers: [.option, .command])
+
+        Divider()
+
+        Toggle("Pausar captura", isOn: Binding(
+            get: { environment.isPaused },
+            set: { environment.isPaused = $0 }
+        ))
+
+        Toggle("Pegar siempre como texto plano", isOn: Binding(
+            get: { environment.alwaysPlainText },
+            set: { environment.alwaysPlainText = $0 }
+        ))
+
+        // El estado se lee del sistema en cada apertura del menú, no de una
+        // preferencia propia: el usuario puede desactivarlo desde Ajustes >
+        // Elementos de inicio y la app no se entera.
+        Toggle("Abrir al iniciar sesión", isOn: Binding(
+            get: { environment.opensAtLogin },
+            set: { environment.opensAtLogin = $0 }
+        ))
+
+        Divider()
+
+        Toggle("Sincronizar con iCloud", isOn: Binding(
+            get: { environment.syncEnabled },
+            set: { environment.syncEnabled = $0 }
+        ))
+        // Sin estado visible, una sincronización rota es indistinguible de
+        // una ociosa.
+        Text(environment.syncStatusText).font(.caption)
+
+        // El push silencioso llega cuando el sistema quiere. Esto es el
+        // camino para cuando el usuario ya está mirando y no quiere esperar.
+        Button("Sincronizar ahora") { environment.syncNow() }
+            .disabled(!environment.syncEnabled)
+
+        // El menú se reconstruye cada vez que se abre, así que basta con
+        // leer el permiso aquí para que la opción desaparezca sola en
+        // cuanto se conceda desde Ajustes.
+        if !environment.isAccessibilityTrusted {
+            Divider()
+            Button("Activar Direct Paste…") { environment.requestAccessibility() }
+        }
+
+        if let error = environment.openError {
+            Divider()
+            Text(error).font(.caption)
+        }
+
+        Divider()
+
+        Button("Salir de Paste") { NSApplication.shared.terminate(nil) }
+            .keyboardShortcut("q")
     }
 }
 
@@ -93,6 +119,12 @@ final class AppEnvironment {
     // Mismo dominio que `settingsStore`: la instancia de depuración no debe
     // compartir "última posición" con la principal.
     private let lastScope = LastScopeStore(defaults: .pasteInstance)
+
+    /// El Mac no vende nada: lee la copia del derecho que publica el iPhone. Una
+    /// compilación con Developer ID no tiene recibo, así que StoreKit aquí no
+    /// responde nada útil.
+    private let entitlements = EntitlementStore(defaults: .pasteInstance)
+    private(set) var access: AccessDecision = .locked(.mirrorNeverSeen)
     private var sync: CloudSyncEngine?
     private let paster = DirectPaster()
     private let hotKeys = HotKeyCenter()
@@ -172,6 +204,8 @@ final class AppEnvironment {
     }
 
     init() {
+        access = decideAccess(entitlements.load(), policy: .mirror)
+
         do {
             let db = try AppDatabase.open(at: try AppPaths.databaseURL())
             let store = ClipboardStore(db)
@@ -189,7 +223,10 @@ final class AppEnvironment {
                 settings: settingsStore.load(),
                 deviceID: deviceID
             )
-            watcher.start()
+            // Bloqueado no se captura: seguir llenando un historial que el
+            // usuario no puede abrir es quedarse con lo que copia a cambio de
+            // nada.
+            if access.isGranted { watcher.start() }
             self.watcher = watcher
             self.writer = ClipboardWriter(watcher: watcher)
 
@@ -216,10 +253,32 @@ final class AppEnvironment {
 
         panel.configure { [weak self] in
             guard let self else { return AnyView(EmptyView()) }
+            if case .locked(let reason) = access {
+                return AnyView(MacLockedView(reason: reason) { [weak self] in
+                    self?.refreshAccess()
+                })
+            }
             return AnyView(PanelView(environment: self, model: model, pinboards: pinboards))
         }
         hotKeys.register(.optionCommandV) { [weak self] in
             self?.panel.toggle()
+        }
+    }
+
+    /// Vuelve a decidir el acceso con lo que haya en la caché del espejo.
+    ///
+    /// El capturador se arranca o se para aquí y no en la vista: es lo único que
+    /// sigue tocando datos del usuario con la app bloqueada.
+    func refreshAccess() {
+        let previous = access.isGranted
+        access = decideAccess(entitlements.load(), policy: .mirror)
+        guard access.isGranted != previous else { return }
+
+        if access.isGranted {
+            watcher?.start()
+        } else {
+            watcher?.stop()
+            panel.hide()
         }
     }
 
